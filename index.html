@@ -156,7 +156,7 @@
       </div>
     </div>
     <div>
-      <h2>Live movement feed<span class="h-i"></span></h2>
+      <h2>Live movement feed <span id="feedSpin" class="muted" style="font-size:10px;letter-spacing:0;text-transform:none"></span><span class="h-i"></span></h2>
       <div class="card feedwrap">
         <div class="overlay" id="feedOv"><span class="spin"></span>loading recent transfers…</div>
         <table><thead><tr><th>Time (UTC)</th><th>Chain</th><th>Movement</th><th class="num">Amount</th></tr></thead>
@@ -265,6 +265,7 @@ function raiseAlert(ev){ // ev {msg, amt, url}
 
 async function poll(){
   document.getElementById("statustxt").innerHTML='<span class="spin"></span>refreshing…'; bar(15);
+  const fs0=document.getElementById("feedSpin"); if(fs0&&!firstRun)fs0.innerHTML='<span class="spin"></span>updating…';
   await getPrices(); bar(35);
   const cron=W.filter(w=>w.chain==="cronos"), eth=W.filter(w=>w.chain==="eth");
   try{const cRes=await rpc(CRONOS_RPC,cron.map(w=>({m:"eth_getBalance",p:[w.a,"latest"]})));
@@ -427,6 +428,7 @@ function drawSpark(snaps){
 
 async function loadFeed(){
   const rows=[];
+  const fs=document.getElementById("feedSpin"); if(fs&&!firstRun)fs.innerHTML='<span class="spin"></span>updating…';
   const cJobs=W.filter(w=>w.chain==="cronos"&&!w.noexpand).map(async w=>{
     try{const r=await fx(`https://cronos.org/explorer/api?module=account&action=txlist&address=${w.a}&sort=desc&page=1&offset=6`);
       const j=await r.json();
@@ -466,6 +468,7 @@ async function loadFeed(){
         amt:`${fmt(r.amt,r.sym==="ETH"?2:0)} ${r.sym} · ${usd(usdv)}`,url:r.url});}}
     seenTx.add(r.key);
   });
+  if(fs)fs.innerHTML="";
 }
 
 // ---- flow canvas ----
