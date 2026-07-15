@@ -1,0 +1,14 @@
+{
+ "nextWid": 1,
+ "wallets": [
+  {"id":"seed","addr":"0x91f3829a82658a95872677b96ed487c58834efdb","chain":"cronos","label":"Scam wallet (origin)","role":"origin","x":0.10,"y":0.5},
+  {"id":"c-d40b","addr":"0xd40bd3765a51a85375acb53ac97706454eb22310","chain":"cronos","label":"Layering (parked)","role":"holds","x":0.34,"y":0.14},
+  {"id":"c-5ed8","addr":"0x5ed81fe1f02226301cf28a85ad55253ec9bc0c59","chain":"cronos","label":"Layering","role":"holds","x":0.34,"y":0.34},
+  {"id":"c-00bd","addr":"0x00bdc013a3a43843eba50f663c66d1e1f8190a73","chain":"cronos","label":"Layering","role":"pass","x":0.34,"y":0.62},
+  {"id":"c-a911","addr":"0xa91114c82153eec701121b395c0e94a9132f09c5","chain":"cronos","label":"Bridge source","role":"holds","x":0.34,"y":0.85},
+  {"id":"c-funnel","addr":"0x83b0168f2d7b4dbeb2b7c5f7ea9f41fbc56e4221","chain":"cronos","label":"Gate.io funnel","role":"pass","x":0.60,"y":0.62},
+  {"id":"c-gate","addr":"0x0d0707963952f2fba59dd06f2b425ace40b492fe","chain":"cronos","label":"Gate.io","role":"exchange","x":0.86,"y":0.62,"exclude":true,"service":true},
+  {"id":"e-a911","addr":"0xa91114c82153eec701121b395c0e94a9132f09c5","chain":"eth","label":"ETH holdings","role":"holds","x":0.60,"y":0.9},
+  {"id":"e-cons","addr":"0xf0Ef10c3b6D28231dBE9E5D198f1BAC04CfFad59","chain":"eth","label":"ETH consolidation","role":"bridge","x":0.86,"y":0.9}
+ ]
+}

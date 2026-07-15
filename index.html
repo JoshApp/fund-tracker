@@ -171,7 +171,7 @@
     <tbody id="hist"><tr><td colspan="3" class="muted">no movements recorded yet — this fills in as funds move</td></tr></tbody></table>
   </div>
 
-  <h2>Watched wallets<span class="h-i"></span></h2>
+  <h2>Watched wallets <span id="wcount" class="muted" style="text-transform:none;letter-spacing:0"></span><span class="h-i"></span></h2>
   <div class="card" style="overflow-x:auto">
     <table><thead><tr><th>Wallet</th><th>Chain</th><th>Role</th><th class="num">Native</th><th class="num">Stablecoin</th><th class="num">USD</th><th></th></tr></thead>
     <tbody id="wallets"></tbody></table>
@@ -188,7 +188,7 @@ const USDC_ETH="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 const USDT_ETH="0xdac17f958d2ee523a2206206994597c13d831ec7";
 const REFRESH=60;
 
-const W = [
+let W = [   // fallback core list; replaced at runtime by data/wallets.json (which the Action grows)
   {id:"seed", a:"0x91f3829a82658a95872677b96ed487c58834efdb", chain:"cronos", role:"origin", label:"Scam wallet", x:.10,y:.5},
   {id:"c-d40b", a:"0xd40bd3765a51a85375acb53ac97706454eb22310", chain:"cronos", role:"holds", label:"Layering (parked)", x:.34,y:.14},
   {id:"c-5ed8", a:"0x5ed81fe1f02226301cf28a85ad55253ec9bc0c59", chain:"cronos", role:"holds", label:"Layering", x:.34,y:.34},
@@ -371,10 +371,17 @@ function updateStatus(){
   const total=scam.reduce((s,w)=>s+(w.usd||0),0);
   const freezable=scam.reduce((s,w)=>s+(w.stable||0),0);
   const idle=total-freezable;
+  // background-monitor health (the GitHub Action). If stale, "no movement" is NOT trustworthy.
+  let mon;
+  if(monitorUpdated==null) mon=`<span class="muted">Monitor:</span> <span style="color:var(--gold)">starting…</span>`;
+  else{ const stale=(Date.now()-monitorUpdated)>25*60*1000;
+    mon=`<span class="muted">Monitor:</span> <span class="${stale?'moved-yes':'moved-no'}" title="${stale?'The background job hasn\'t reported recently — do not trust \'no movement\' until it is live again':'Background job running normally'}">${stale?'⚠ STALE':'● live'}</span> <span class="muted">(${ago(monitorUpdated)})</span>`; }
   document.getElementById("strip").innerHTML=
     `<span><span class="muted">Where's the money:</span> <span class="big">${usd(idle)}</span> sitting idle in wallets</span>
      <span class="sep"></span><span><b>${usd(freezable)}</b> <span class="muted">freezable (stablecoin)</span></span>
-     <span class="sep"></span><span><span class="muted">Did it move?</span> <a class="jumplog ${movedRecently?'moved-yes':'moved-no'}" href="#movelog">${movedRecently?'YES — '+ago(lastAny):'no movement in 24h'} &rsaquo;</a> <span class="muted">(view movements)</span></span>`;
+     <span class="sep"></span><span><span class="muted">Did it move?</span> <a class="jumplog ${movedRecently?'moved-yes':'moved-no'}" href="#movelog">${movedRecently?'YES — '+ago(lastAny):'no movement in 24h'} &rsaquo;</a></span>
+     <span class="sep"></span><span>${mon}</span>`;
+  const wc=document.getElementById("wcount"); if(wc)wc.textContent="— "+W.filter(w=>w.id!=="c-gate").length+" wallets tracked";
   // since-last-visit — only real movements trigger this (never price drift)
   const v=document.getElementById("visit");
   if(lastSeenId===null){ // first ever visit: baseline to current, no backlog banner
@@ -397,13 +404,26 @@ function markSeen(){
   const ab=document.getElementById("alerts"); ab.innerHTML=""; ab.classList.remove("show"); // also clear any red pop-alerts
   document.getElementById("visit").classList.remove("show"); renderHist(); updateStatus();
 }
+async function loadWallets(){
+  try{
+    const r=await fetch("./data/wallets.json?_="+Date.now());
+    if(!r.ok)return;
+    const wf=await r.json();
+    if(wf.wallets&&wf.wallets.length){
+      W=wf.wallets.map(w=>({id:w.id,a:w.addr,chain:w.chain,role:w.role,label:w.label,
+        x:w.x,y:w.y,noexpand:!!w.exclude,auto:!!w.auto,from:w.from}));
+    }
+  }catch(e){}
+}
+let monitorUpdated=null; // last time the background Action logged a snapshot
 async function loadLog(){
   try{
     const r=await fetch("./data/history.json?_="+Date.now());
     if(!r.ok)return;
     const h=await r.json();
+    monitorUpdated=h.updated?Date.parse(h.updated):null;
     serverEvents=(h.events||[]).map(e=>({id:e.id, t:(e.t||"").replace("T"," ").slice(0,19),msg:e.msg,
-      amt:((e.delta||0)<0?"−":"+")+"$"+Math.abs(e.delta||0).toLocaleString("en-US"),
+      amt:e.test?"":(((e.delta||0)<0?"−":"+")+"$"+Math.abs(e.delta||0).toLocaleString("en-US")),
       chain:e.chain, url:e.chain==="eth"?`https://etherscan.io/address/${e.addr}`:`https://cronoscan.com/address/${e.addr}`}));
     maxServerId=serverEvents.reduce((m,e)=>Math.max(m,e.id||0),0);
     window._snaps=h.snapshots||[]; drawSpark(window._snaps); renderHist(); updateStatus();
@@ -477,14 +497,15 @@ function drawFlow(){
   const dpr=Math.min(window.devicePixelRatio||1,2);
   const w=cv.clientWidth,h=cv.clientHeight;cv.width=w*dpr;cv.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,w,h);
-  const pos={};W.forEach(n=>pos[n.id]={x:20+n.x*(w-40),y:24+n.y*(h-56)});
+  const core=W.filter(n=>n.x!=null);   // map shows the known trail; auto-added wallets live in the table + log
+  const pos={};core.forEach(n=>pos[n.id]={x:20+n.x*(w-40),y:24+n.y*(h-56)});
   EDGES.forEach(([a,b])=>{const A=pos[a],B=pos[b];if(!A||!B)return;
     ctx.beginPath();ctx.moveTo(A.x,A.y);const mx=(A.x+B.x)/2;ctx.bezierCurveTo(mx,A.y,mx,B.y,B.x,B.y);
     ctx.strokeStyle=cssv('--line2');ctx.lineWidth=1.4;ctx.stroke();
     const ang=Math.atan2(B.y-A.y,B.x-A.x);ctx.save();ctx.translate(B.x-Math.cos(ang)*16,B.y-Math.sin(ang)*16);ctx.rotate(ang);
     ctx.fillStyle=cssv('--faint');ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(-6,-3);ctx.lineTo(-6,3);ctx.closePath();ctx.fill();ctx.restore();});
-  const maxUsd=Math.max(1,...W.filter(n=>n.id!=="c-gate").map(n=>n.usd||0));
-  W.forEach(n=>{const P=pos[n.id];const c=cssv(ROLECOL[n.role]||"--slate");
+  const maxUsd=Math.max(1,...core.filter(n=>n.id!=="c-gate").map(n=>n.usd||0));
+  core.forEach(n=>{const P=pos[n.id];const c=cssv(ROLECOL[n.role]||"--slate");
     const r=Math.max(7,9+15*Math.sqrt((n.usd||0)/maxUsd));
     ctx.beginPath();ctx.arc(P.x,P.y,r,0,7);ctx.fillStyle=c;ctx.globalAlpha=.92;ctx.fill();ctx.globalAlpha=1;
     ctx.lineWidth=1.4;ctx.strokeStyle="rgba(0,0,0,.4)";ctx.stroke();
@@ -519,7 +540,7 @@ document.addEventListener("click",e=>{
 let cd=REFRESH;
 function tick(){cd--;if(cd<=0){cd=REFRESH;poll();}document.getElementById("countdown").textContent=cd;}
 document.getElementById("refreshBtn").onclick=()=>{cd=REFRESH;poll();};
-renderHist(); loadLog().then(()=>poll()); setInterval(tick,1000); setInterval(loadLog,300000);
+renderHist(); loadWallets().then(loadLog).then(poll); setInterval(tick,1000); setInterval(()=>{loadWallets();loadLog();},300000);
 </script>
 </body>
 </html>

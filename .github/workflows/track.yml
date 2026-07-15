@@ -1,14 +1,19 @@
 name: track-funds
 
-# Polls the chains on a schedule, logs a snapshot to data/history.json,
-# and sends a Telegram alert when funds move >= the threshold.
+# Polls the chains on a schedule, GROWS the watch list by following significant transfers,
+# logs a snapshot to data/history.json, and sends a Telegram alert when funds move >= the threshold.
 on:
   schedule:
     - cron: "*/15 * * * *"   # every 15 minutes (GitHub may delay this a few minutes)
-  workflow_dispatch: {}       # lets you run it manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      selftest:
+        description: "Send a TEST alert (verify detection + Telegram work) — does not require real movement"
+        type: boolean
+        default: false
 
 permissions:
-  contents: write             # allow the job to commit history back to the repo
+  contents: write
 
 concurrency:
   group: track-funds
@@ -24,18 +29,21 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Poll chains & detect movement
+      - name: Poll chains, follow new wallets, detect movement
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ALERT_THRESHOLD_USD: "2000"
+          ALERT_THRESHOLD_USD: "2000"      # alert when a wallet's value moves >= this
+          FOLLOW_THRESHOLD_USD: "1000"     # auto-add destinations of transfers >= this
+          MAX_WATCH: "150"                 # cap on total watched wallets
+          SELFTEST: ${{ inputs.selftest }} # true only when you run it manually with the box ticked
         run: node scripts/poll.mjs
 
-      - name: Commit updated history
+      - name: Commit updated history + wallet list
         run: |
           git config user.name  "fund-tracker-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/history.json
+          git add data/history.json data/wallets.json
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
