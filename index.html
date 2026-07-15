@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Fund Tracker — CRO fraud trace</title>
+<style>
+  :root{
+    --ink:#0a0e17; --panel:#111726; --panel2:#0d1320; --line:rgba(148,163,197,.14);
+    --line2:rgba(148,163,197,.28); --text:#e7ecf6; --muted:#8592ad; --faint:#5d6a86;
+    --gold:#e0a73c; --cyan:#37b6ce; --coral:#e8595e; --violet:#9a8cf0; --slate:#6b7896; --good:#4fbf8b;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ink);color:var(--text);font-family:var(--sans);line-height:1.5;
+    background-image:radial-gradient(120% 80% at 85% -10%, color-mix(in srgb,var(--gold) 6%,transparent), transparent 60%)}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px clamp(14px,3vw,32px) 60px}
+  a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}
+  .mono{font-family:var(--mono)}
+  /* top loading bar */
+  #bar{position:fixed;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,var(--cyan),var(--gold));
+    z-index:50;transition:width .3s ease, opacity .4s;box-shadow:0 0 8px var(--gold);opacity:0}
+  #bar.on{opacity:1}
+  header{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:baseline;justify-content:space-between;
+    border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px}
+  h1{font-size:clamp(19px,2.6vw,25px);margin:0;letter-spacing:-.01em}
+  h1 small{color:var(--muted);font-weight:400;font-size:13px;display:block;margin-top:2px}
+  .status{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+  .status b{color:var(--good)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--good);margin-right:6px;
+    box-shadow:0 0 0 0 color-mix(in srgb,var(--good) 60%,transparent);animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--good) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line2);border-top-color:var(--gold);
+    border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px;margin-right:6px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  button.rf,button.bell{font-family:var(--mono);font-size:12px;color:var(--text);background:var(--panel);
+    border:1px solid var(--line2);border-radius:7px;padding:6px 11px;cursor:pointer;margin-left:8px}
+  button.rf:hover{border-color:var(--gold);color:var(--gold)}
+  button.bell.on{border-color:var(--good);color:var(--good)}
+  /* alert banner */
+  #alerts{display:none;flex-direction:column;gap:8px;margin-bottom:18px}
+  #alerts.show{display:flex}
+  .alert{background:color-mix(in srgb,var(--coral) 14%,var(--panel));border:1px solid var(--coral);
+    border-left:4px solid var(--coral);border-radius:9px;padding:11px 14px;display:flex;gap:12px;align-items:center;
+    animation:slidein .4s ease}
+  @keyframes slidein{from{transform:translateY(-6px);opacity:0}to{transform:none;opacity:1}}
+  .alert .ic{font-size:18px}
+  .alert .msg{flex:1;font-size:13.5px}
+  .alert .msg b{color:var(--text)} .alert .amt{font-family:var(--mono);color:var(--coral);font-weight:700}
+  .alert .x{cursor:pointer;color:var(--faint);border:none;background:none;font-size:16px}
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
+  @media(max-width:720px){.tiles{grid-template-columns:repeat(2,1fr)}}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:14px 15px;position:relative;overflow:hidden}
+  .tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--k,var(--gold))}
+  .tile .lab{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .tile .val{font-size:clamp(18px,2.6vw,25px);font-weight:640;letter-spacing:-.02em;margin-top:6px;font-variant-numeric:tabular-nums}
+  .tile .val.sk{color:transparent;background:linear-gradient(90deg,var(--line),var(--line2),var(--line));
+    background-size:200% 100%;animation:shimmer 1.3s infinite;border-radius:5px}
+  @keyframes shimmer{to{background-position:-200% 0}}
+  .tile .sub{font-size:11.5px;color:var(--faint);margin-top:3px;font-family:var(--mono)}
+  h2{font-size:12px;font-family:var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+    margin:26px 0 10px;font-weight:600;display:flex;align-items:center;gap:10px}
+  h2 .h-i{flex:1;height:1px;background:var(--line)}
+  .grid2{display:grid;grid-template-columns:1.15fr 1fr;gap:18px}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:14px;overflow:hidden;position:relative}
+  #flow{display:block;width:100%;height:360px}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 14px;padding:9px 13px;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th,td{text-align:left;padding:8px 11px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);position:sticky;top:0;background:var(--panel2)}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+  .wallet{font-family:var(--mono);font-size:11.5px}
+  .chip{font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:5px;border:1px solid;white-space:nowrap}
+  .feedwrap,.histwrap{max-height:360px;overflow-y:auto}
+  .flash{animation:flash 2.6s ease-out}
+  @keyframes flash{0%{background:color-mix(in srgb,var(--gold) 34%,transparent)}100%{background:transparent}}
+  .flash-in{animation:flashin 2.6s ease-out}
+  @keyframes flashin{0%{background:color-mix(in srgb,var(--good) 30%,transparent)}100%{background:transparent}}
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;
+    background:color-mix(in srgb,var(--panel2) 75%,transparent);font-family:var(--mono);font-size:12px;color:var(--muted);z-index:3}
+  .overlay.hide{display:none}
+  .err{color:var(--coral);font-size:11px;font-family:var(--mono)}
+  .foot{margin-top:26px;padding-top:14px;border-top:1px solid var(--line);color:var(--faint);font-size:11px;font-family:var(--mono)}
+  .thresh{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .thresh input{width:74px;background:var(--panel);border:1px solid var(--line2);color:var(--text);
+    border-radius:6px;padding:3px 6px;font-family:var(--mono);font-size:11px}
+  .muted{color:var(--faint)}
+  /* glance status strip + since-last-visit */
+  .strip{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;background:var(--panel);
+    border:1px solid var(--line);border-radius:11px;padding:12px 16px;margin-bottom:14px;font-size:13.5px}
+  .strip .big{font-size:15px;font-weight:640}
+  .strip .sep{width:1px;height:20px;background:var(--line)}
+  .moved-yes{color:var(--coral);font-weight:700} .moved-no{color:var(--good);font-weight:700}
+  .visit{display:none;align-items:center;gap:12px;background:color-mix(in srgb,var(--cyan) 12%,var(--panel));
+    border:1px solid var(--cyan);border-left:4px solid var(--cyan);border-radius:10px;padding:11px 15px;margin-bottom:14px;font-size:13.5px}
+  .visit.show{display:flex} .visit .big{font-weight:700}
+  .visit .net.up{color:var(--good)} .visit .net.down{color:var(--coral)}
+  .visit button{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--ink);background:var(--cyan);
+    border:none;border-radius:7px;padding:6px 12px;cursor:pointer;font-weight:700}
+  .newbadge{display:inline-block;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.06em;
+    background:var(--cyan);color:var(--ink);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:1px}
+  html{scroll-behavior:smooth}
+  a.jumplog{cursor:pointer} a.jumplog:hover{text-decoration:underline}
+  tr.clickrow{cursor:pointer} tr.clickrow:hover td{background:color-mix(in srgb,var(--cyan) 9%,transparent)}
+  .hl{animation:hl 1.9s ease-out}
+  @keyframes hl{0%{box-shadow:0 0 0 2px var(--cyan),0 0 16px color-mix(in srgb,var(--cyan) 60%,transparent)}100%{box-shadow:none}}
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<div class="wrap">
+  <header>
+    <h1>Stolen-Fund Tracker <small>Case: on-chain CRO fraud &middot; Cronos + Ethereum &middot; live on-chain</small></h1>
+    <div class="status">
+      <div><span class="dot" id="dot"></span><span id="statustxt">starting&hellip;</span></div>
+      <div>updated <b id="updated">—</b> &middot; next in <b id="countdown">—</b>s
+        <button class="bell" id="bellBtn" type="button" title="Enable desktop alerts">🔔 Alerts off</button>
+        <button class="rf" id="refreshBtn" type="button">Refresh now</button></div>
+      <div class="thresh" style="margin-top:5px">alert on moves ≥ $<input id="thresh" type="number" value="2000" min="0"/></div>
+    </div>
+  </header>
+
+  <div id="alerts"></div>
+  <div class="visit" id="visit"></div>
+  <div class="strip" id="strip"><span class="muted">loading status…</span></div>
+
+  <div class="tiles">
+    <div class="tile" style="--k:var(--cyan)"><div class="lab">Total traced value</div><div class="val sk" id="t-total">·····</div><div class="sub" id="t-total-sub">across both chains</div></div>
+    <div class="tile" style="--k:var(--good)"><div class="lab">Freezable now (stablecoins)</div><div class="val sk" id="t-freeze">·····</div><div class="sub">USDC + USDT (Circle / Tether)</div></div>
+    <div class="tile" style="--k:var(--coral)"><div class="lab">Idle native (not freezable)</div><div class="val sk" id="t-native">·····</div><div class="sub">CRO + ETH in scammer wallets</div></div>
+    <div class="tile" style="--k:var(--gold)"><div class="lab">Prices</div><div class="val sk" id="t-prices" style="font-size:16px">·····</div><div class="sub">live spot</div></div>
+  </div>
+
+  <h2>Total traced value over time <span class="muted" style="text-transform:none;letter-spacing:0">— from the logged history (updates every ~15 min via the tracker job)</span><span class="h-i"></span></h2>
+  <div class="card" style="padding:12px 14px">
+    <canvas id="spark" style="display:block;width:100%;height:120px"></canvas>
+    <div class="muted" style="font-family:var(--mono);font-size:11px;padding:4px 2px 0" id="sparkinfo">no history log found yet — it appears once the tracker job has run (or add data/history.json)</div>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <h2>Money-flow map<span class="h-i"></span></h2>
+      <div class="card">
+        <canvas id="flow"></canvas>
+        <div class="legend">
+          <span><i style="background:var(--cyan)"></i>origin</span>
+          <span><i style="background:var(--gold)"></i>holds funds</span>
+          <span><i style="background:var(--coral)"></i>exchange</span>
+          <span><i style="background:var(--violet)"></i>bridge/swap</span>
+          <span><i style="background:var(--slate)"></i>pass-through</span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h2>Live movement feed<span class="h-i"></span></h2>
+      <div class="card feedwrap">
+        <div class="overlay" id="feedOv"><span class="spin"></span>loading recent transfers…</div>
+        <table><thead><tr><th>Time (UTC)</th><th>Chain</th><th>Movement</th><th class="num">Amount</th></tr></thead>
+        <tbody id="feed"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <h2 id="movelog">Movement log <span class="muted" style="text-transform:none;letter-spacing:0">— what moved &amp; when · click any row to view it on the blockchain</span><span class="h-i"></span></h2>
+  <div class="card histwrap" id="movecard">
+    <table><thead><tr><th>When (UTC)</th><th>What moved</th><th class="num">Amount</th></tr></thead>
+    <tbody id="hist"><tr><td colspan="3" class="muted">no movements recorded yet — this fills in as funds move</td></tr></tbody></table>
+  </div>
+
+  <h2>Watched wallets<span class="h-i"></span></h2>
+  <div class="card" style="overflow-x:auto">
+    <table><thead><tr><th>Wallet</th><th>Chain</th><th>Role</th><th class="num">Native</th><th class="num">Stablecoin</th><th class="num">USD</th><th></th></tr></thead>
+    <tbody id="wallets"></tbody></table>
+  </div>
+
+  <div class="foot">Read-only viewer &middot; data polled live from public Cronos &amp; Ethereum nodes and block explorers &middot; history &amp; alerts stored in your browser &middot; not financial or legal advice.</div>
+</div>
+
+<script>
+"use strict";
+const CRONOS_RPC="https://evm.cronos.org/";
+const ETH_RPC="https://ethereum-rpc.publicnode.com/";
+const USDC_ETH="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+const USDT_ETH="0xdac17f958d2ee523a2206206994597c13d831ec7";
+const REFRESH=60;
+
+const W = [
+  {id:"seed", a:"0x91f3829a82658a95872677b96ed487c58834efdb", chain:"cronos", role:"origin", label:"Scam wallet", x:.10,y:.5},
+  {id:"c-d40b", a:"0xd40bd3765a51a85375acb53ac97706454eb22310", chain:"cronos", role:"holds", label:"Layering (parked)", x:.34,y:.14},
+  {id:"c-5ed8", a:"0x5ed81fe1f02226301cf28a85ad55253ec9bc0c59", chain:"cronos", role:"holds", label:"Layering", x:.34,y:.34},
+  {id:"c-00bd", a:"0x00bdc013a3a43843eba50f663c66d1e1f8190a73", chain:"cronos", role:"pass", label:"Layering", x:.34,y:.62},
+  {id:"c-a911", a:"0xa91114c82153eec701121b395c0e94a9132f09c5", chain:"cronos", role:"holds", label:"Bridge source", x:.34,y:.85},
+  {id:"c-funnel", a:"0x83b0168f2d7b4dbeb2b7c5f7ea9f41fbc56e4221", chain:"cronos", role:"pass", label:"Gate.io funnel", x:.60,y:.62},
+  {id:"c-gate", a:"0x0d0707963952f2fba59dd06f2b425ace40b492fe", chain:"cronos", role:"exchange", label:"Gate.io", x:.86,y:.62, noexpand:true},
+  {id:"e-a911", a:"0xa91114c82153eec701121b395c0e94a9132f09c5", chain:"eth", role:"holds", label:"ETH holdings", x:.60,y:.9},
+  {id:"e-cons", a:"0xf0Ef10c3b6D28231dBE9E5D198f1BAC04CfFad59", chain:"eth", role:"bridge", label:"ETH consolidation", x:.86,y:.9},
+];
+const EDGES=[["seed","c-d40b"],["seed","c-5ed8"],["seed","c-00bd"],["seed","c-a911"],
+  ["c-00bd","c-funnel"],["c-funnel","c-gate"],["c-a911","e-a911"],["e-a911","e-cons"]];
+const ROLECOL={origin:"--cyan",holds:"--gold",exchange:"--coral",bridge:"--violet",pass:"--slate"};
+
+let prices={eth:null,cro:null};
+let prev=JSON.parse(localStorage.getItem("sft_prev")||"{}");
+let history=JSON.parse(localStorage.getItem("sft_hist")||"[]");
+let seenTx=new Set(); let firstRun=true; let notify=false;
+
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+const short=a=>(a||"").slice(0,6)+"…"+(a||"").slice(-4);
+const fmt=(n,d=0)=>Number(n||0).toLocaleString("en-US",{maximumFractionDigits:d});
+const usd=n=>"$"+fmt(n,0);
+const nowUTC=()=>new Date().toISOString().slice(0,19).replace("T"," ");
+function bar(p){const b=document.getElementById("bar");if(p<=0){b.classList.remove("on");b.style.width="0";}else{b.classList.add("on");b.style.width=p+"%";}}
+
+async function fx(url,opts){ // fetch with 12s timeout so one slow host can't block the page
+  const c=new AbortController(); const id=setTimeout(()=>c.abort(),12000);
+  try{ return await fetch(url,Object.assign({signal:c.signal},opts||{})); }
+  finally{ clearTimeout(id); }
+}
+async function rpc(url,calls){
+  const body=calls.map((c,i)=>({jsonrpc:"2.0",id:i,method:c.m,params:c.p}));
+  const r=await fx(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const j=await r.json();const out=new Array(calls.length);
+  (Array.isArray(j)?j:[j]).forEach(x=>{out[x.id]=x.result;});return out;
+}
+const hexToNum=(h,dec)=>h&&h!=="0x"?Number(BigInt(h))/Math.pow(10,dec):0;
+const balData=a=>"0x70a08231"+a.slice(2).toLowerCase().padStart(64,"0");
+
+async function getPrices(){
+  let got={eth:null,cro:null};
+  try{const r=await fx("https://api.coingecko.com/api/v3/simple/price?ids=ethereum,crypto-com-chain&vs_currencies=usd");
+    const j=await r.json();got.eth=j.ethereum?.usd??null;got.cro=j["crypto-com-chain"]?.usd??null;}catch(e){}
+  // fallback chain: live API -> last good (saved) -> history-log price -> hardcoded
+  const saved=JSON.parse(localStorage.getItem("sft_px")||"null");
+  const logpx=(window._snaps&&window._snaps.length)?window._snaps[window._snaps.length-1].prices:null;
+  prices.eth=got.eth??saved?.eth??logpx?.eth??prices.eth;
+  prices.cro=got.cro??saved?.cro??logpx?.cro??prices.cro??0.056;
+  if(got.eth||got.cro)localStorage.setItem("sft_px",JSON.stringify(prices));
+}
+
+function beep(){ try{const c=new (window.AudioContext||window.webkitAudioContext)();
+  const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);
+  o.type="sine";o.frequency.value=880;g.gain.value=.06;o.start();
+  o.frequency.exponentialRampToValueAtTime(440,c.currentTime+.25);g.gain.exponentialRampToValueAtTime(.0001,c.currentTime+.5);
+  o.stop(c.currentTime+.5);}catch(e){} }
+
+function raiseAlert(ev){ // ev {msg, amt, url}
+  history.unshift({t:nowUTC(),...ev}); history=history.slice(0,200);
+  localStorage.setItem("sft_hist",JSON.stringify(history));
+  const box=document.getElementById("alerts"); box.classList.add("show");
+  const d=document.createElement("div"); d.className="alert";
+  d.innerHTML=`<span class="ic">🚨</span><div class="msg">${ev.msg} ${ev.url?`<a href="${ev.url}" target="_blank" rel="noopener">view ↗</a>`:""}</div>
+    <span class="amt">${ev.amt||""}</span><button class="x" title="dismiss">×</button>`;
+  d.querySelector(".x").onclick=()=>{d.remove();if(!box.children.length)box.classList.remove("show");};
+  box.prepend(d);
+  beep();
+  if(notify&&"Notification"in window&&Notification.permission==="granted"){
+    try{new Notification("🚨 Stolen-fund movement",{body:(ev.msg||"").replace(/<[^>]+>/g,"")+" "+(ev.amt||"")});}catch(e){}
+  }
+  renderHist();
+}
+
+async function poll(){
+  document.getElementById("statustxt").innerHTML='<span class="spin"></span>refreshing…'; bar(15);
+  await getPrices(); bar(35);
+  const cron=W.filter(w=>w.chain==="cronos"), eth=W.filter(w=>w.chain==="eth");
+  try{const cRes=await rpc(CRONOS_RPC,cron.map(w=>({m:"eth_getBalance",p:[w.a,"latest"]})));
+    cron.forEach((w,i)=>{w.native=hexToNum(cRes[i],18);w.nsym="CRO";w.stable=0;w.err=0;});}catch(e){cron.forEach(w=>w.err=1);}
+  bar(55);
+  try{const calls=[];eth.forEach(w=>{calls.push({m:"eth_getBalance",p:[w.a,"latest"]});
+      calls.push({m:"eth_call",p:[{to:USDC_ETH,data:balData(w.a)},"latest"]});
+      calls.push({m:"eth_call",p:[{to:USDT_ETH,data:balData(w.a)},"latest"]});});
+    const eRes=await rpc(ETH_RPC,calls);
+    eth.forEach((w,i)=>{w.native=hexToNum(eRes[i*3],18);w.nsym="ETH";w.stable=hexToNum(eRes[i*3+1],6)+hexToNum(eRes[i*3+2],6);w.err=0;});}
+  catch(e){eth.forEach(w=>w.err=1);}
+  bar(70);
+  W.forEach(w=>{const p=w.chain==="eth"?prices.eth:prices.cro;w.usd=(w.native||0)*(p||0)+(w.stable||0);});
+
+  detectBalanceChanges();
+  renderTiles(); renderWallets(); drawFlow();
+  bar(85);
+  await loadFeed(); bar(100);
+  updateStatus();
+
+  document.getElementById("updated").textContent=new Date().toISOString().slice(11,19);
+  document.getElementById("statustxt").textContent="live";
+  firstRun=false; setTimeout(()=>bar(0),400);
+}
+
+function detectBalanceChanges(){
+  const TH=Number(document.getElementById("thresh").value||2000);
+  W.forEach(w=>{
+    if(w.id==="c-gate"||w.err)return;
+    const p=prev[w.id];
+    if(p&&typeof p.usd==="number"&&!firstRun){
+      const d=(w.usd||0)-(p.usd||0);
+      if(Math.abs(d)>=TH){
+        const dir=d<0?"left":"arrived at";
+        raiseAlert({msg:`<b>${usd(Math.abs(d))}</b> ${dir} <b>${w.label}</b> (${w.chain==="eth"?"Ethereum":"Cronos"}) — ${short(w.a)}`,
+          amt:(d<0?"−":"+")+usd(Math.abs(d))});
+      }
+    }
+    prev[w.id]={native:w.native,stable:w.stable,usd:w.usd};
+  });
+  localStorage.setItem("sft_prev",JSON.stringify(prev));
+}
+
+function renderTiles(){
+  const scam=W.filter(w=>w.id!=="c-gate");
+  const totalUsd=scam.reduce((s,w)=>s+(w.usd||0),0);
+  const stable=scam.reduce((s,w)=>s+(w.stable||0),0);
+  document.querySelectorAll(".val.sk").forEach(e=>e.classList.remove("sk"));
+  set("t-total",usd(totalUsd)); set("t-freeze",usd(stable)); set("t-native",usd(totalUsd-stable));
+  document.getElementById("t-prices").innerHTML=`ETH ${prices.eth?usd(prices.eth):"—"} · CRO $${prices.cro?prices.cro.toFixed(4):"—"}`;
+}
+function set(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
+function chipFor(role){const c=cssv(ROLECOL[role]||"--slate");
+  const nm={origin:"Origin",holds:"Holds funds",exchange:"Exchange",bridge:"Bridge/Swap",pass:"Pass-through"}[role]||role;
+  return `<span class="chip" style="color:${c};border-color:${c}">${nm}</span>`;}
+
+function renderWallets(){
+  const tb=document.getElementById("wallets");tb.innerHTML="";
+  W.forEach(w=>{
+    const expl=w.chain==="eth"?`https://etherscan.io/address/${w.a}`:`https://cronoscan.com/address/${w.a}`;
+    const tr=document.createElement("tr");
+    const nat=w.err?'<span class="err">error</span>':`${fmt(w.native,w.chain==="eth"?3:0)} ${w.nsym||""}`;
+    const st=w.stable?`${fmt(w.stable,0)} USD*`:"—";
+    tr.innerHTML=`<td class="wallet"><a href="${expl}" target="_blank" rel="noopener">${short(w.a)}</a><br><span style="color:var(--faint);font-size:10.5px">${w.label}</span></td>
+      <td><span class="chip" style="color:${w.chain==="eth"?cssv('--violet'):cssv('--gold')};border-color:${w.chain==="eth"?cssv('--violet'):cssv('--gold')}">${w.chain==="eth"?"Ethereum":"Cronos"}</span></td>
+      <td>${chipFor(w.role)}</td><td class="num">${nat}</td><td class="num">${st}</td>
+      <td class="num">${w.usd?usd(w.usd):"—"}</td>
+      <td><a href="${expl}" target="_blank" rel="noopener" title="explorer">↗</a></td>`;
+    tb.appendChild(tr);
+  });
+}
+
+let serverEvents=[];           // events from history.json (each has a numeric id)
+let maxServerId=0;             // highest event id currently in the log
+let lastSeenId=localStorage.getItem("sft_seenid"); lastSeenId=(lastSeenId===null?null:+lastSeenId);
+let lastSeenTime=+(localStorage.getItem("sft_seentime")||0);
+let lastVals=JSON.parse(localStorage.getItem("sft_seenvals")||"null");
+let lastMovementTs=0;
+const parseT=t=>{if(!t)return 0;const iso=(t.includes("T")?t:t.replace(" ","T"));return Date.parse(iso.endsWith("Z")?iso:iso+"Z")||0;};
+function ago(ms){if(!ms)return "—";const s=(Date.now()-ms)/1000;if(s<90)return "just now";if(s<3600)return Math.round(s/60)+"m ago";if(s<86400)return Math.round(s/3600)+"h ago";return Math.round(s/86400)+"d ago";}
+function mergedEvents(){const seen=new Set(),m=[];for(const h of [...serverEvents,...history]){const k=(h.id!=null?"s"+h.id:(h.t||"")+"|"+(h.msg||"").replace(/<[^>]+>/g,""));if(!seen.has(k)){seen.add(k);m.push(h);}}m.sort((a,b)=>(b.t||"").localeCompare(a.t||""));return m;}
+
+function renderHist(){
+  const tb=document.getElementById("hist");const merged=mergedEvents();
+  if(!merged.length){tb.innerHTML='<tr><td colspan="3" class="muted">no big moves recorded yet — this fills as funds move</td></tr>';return;}
+  tb.innerHTML="";
+  merged.slice(0,80).forEach(h=>{
+    const isNew=(h.id!=null)&&lastSeenId!=null&&h.id>lastSeenId;
+    const link=h.url?` <span style="color:var(--cyan)">↗</span>`:"";
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td class="mono" style="font-size:11px">${h.t}</td><td style="font-size:12px">${h.msg}${link}${isNew?'<span class="newbadge">NEW</span>':''}</td><td class="num">${h.amt||""}</td>`;
+    if(h.url){tr.className="clickrow";tr.title="View on blockchain explorer";tr.onclick=()=>window.open(h.url,"_blank","noopener");}
+    tb.appendChild(tr);
+  });
+}
+
+function updateStatus(){
+  const hasBal=W.some(w=>typeof w.usd==="number");
+  const lastAny=Math.max(lastMovementTs, mergedEvents()[0]?parseT(mergedEvents()[0].t):0);
+  const movedRecently=lastAny&&(Date.now()-lastAny)<24*3600*1000;
+  if(!hasBal)return;
+  const scam=W.filter(w=>w.id!=="c-gate");
+  const total=scam.reduce((s,w)=>s+(w.usd||0),0);
+  const freezable=scam.reduce((s,w)=>s+(w.stable||0),0);
+  const idle=total-freezable;
+  document.getElementById("strip").innerHTML=
+    `<span><span class="muted">Where's the money:</span> <span class="big">${usd(idle)}</span> sitting idle in wallets</span>
+     <span class="sep"></span><span><b>${usd(freezable)}</b> <span class="muted">freezable (stablecoin)</span></span>
+     <span class="sep"></span><span><span class="muted">Did it move?</span> <a class="jumplog ${movedRecently?'moved-yes':'moved-no'}" href="#movelog">${movedRecently?'YES — '+ago(lastAny):'no movement in 24h'} &rsaquo;</a> <span class="muted">(view movements)</span></span>`;
+  // since-last-visit — only real movements trigger this (never price drift)
+  const v=document.getElementById("visit");
+  if(lastSeenId===null){ // first ever visit: baseline to current, no backlog banner
+    lastSeenId=maxServerId; lastSeenTime=Date.now(); lastVals={total};
+    localStorage.setItem("sft_seenid",lastSeenId); localStorage.setItem("sft_seentime",lastSeenTime); localStorage.setItem("sft_seenvals",JSON.stringify(lastVals));
+    v.classList.remove("show"); return;
+  }
+  const newCount=serverEvents.filter(e=>(e.id||0)>lastSeenId).length;
+  if(newCount>0){
+    const net=lastVals?total-(lastVals.total||0):0;
+    const netTxt=Math.abs(net)<50?"":` · net change <span class="net ${net<0?'down':'up'}">${net<0?'−':'+'}${usd(Math.abs(net))}</span>`;
+    v.innerHTML=`<span style="font-size:17px">🆕</span><span><span class="big">${newCount} new movement${newCount===1?"":"s"}</span> since your last visit (${ago(lastSeenTime)})${netTxt} — <a class="jumplog" href="#movelog" style="color:var(--cyan)">see what moved &rsaquo;</a></span><button id="seenBtn">Mark all as seen</button>`;
+    v.classList.add("show"); document.getElementById("seenBtn").onclick=markSeen;
+  } else v.classList.remove("show");
+}
+function markSeen(){
+  const scam=W.filter(w=>w.id!=="c-gate");const total=scam.reduce((s,w)=>s+(w.usd||0),0);
+  lastSeenId=maxServerId; lastSeenTime=Date.now(); lastVals={total};
+  localStorage.setItem("sft_seenid",lastSeenId); localStorage.setItem("sft_seentime",lastSeenTime); localStorage.setItem("sft_seenvals",JSON.stringify(lastVals));
+  const ab=document.getElementById("alerts"); ab.innerHTML=""; ab.classList.remove("show"); // also clear any red pop-alerts
+  document.getElementById("visit").classList.remove("show"); renderHist(); updateStatus();
+}
+async function loadLog(){
+  try{
+    const r=await fetch("./data/history.json?_="+Date.now());
+    if(!r.ok)return;
+    const h=await r.json();
+    serverEvents=(h.events||[]).map(e=>({id:e.id, t:(e.t||"").replace("T"," ").slice(0,19),msg:e.msg,
+      amt:((e.delta||0)<0?"−":"+")+"$"+Math.abs(e.delta||0).toLocaleString("en-US"),
+      chain:e.chain, url:e.chain==="eth"?`https://etherscan.io/address/${e.addr}`:`https://cronoscan.com/address/${e.addr}`}));
+    maxServerId=serverEvents.reduce((m,e)=>Math.max(m,e.id||0),0);
+    window._snaps=h.snapshots||[]; drawSpark(window._snaps); renderHist(); updateStatus();
+  }catch(e){}
+}
+function drawSpark(snaps){
+  const cv=document.getElementById("spark"),ctx=cv.getContext("2d");
+  const dpr=Math.min(window.devicePixelRatio||1,2),w=cv.clientWidth,h=cv.clientHeight;
+  cv.width=w*dpr;cv.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  if(!snaps||snaps.length<2)return;
+  const vals=snaps.map(s=>s.total),mn=Math.min(...vals),mx=Math.max(...vals),pad=10;
+  const X=i=>pad+i*(w-2*pad)/(snaps.length-1),Y=v=>h-pad-((v-mn)/((mx-mn)||1))*(h-2*pad);
+  ctx.beginPath();ctx.moveTo(X(0),Y(vals[0]));vals.forEach((v,i)=>ctx.lineTo(X(i),Y(v)));
+  ctx.lineTo(X(vals.length-1),h);ctx.lineTo(X(0),h);ctx.closePath();
+  ctx.fillStyle=cssv('--cyan');ctx.globalAlpha=.12;ctx.fill();ctx.globalAlpha=1;
+  ctx.beginPath();vals.forEach((v,i)=>i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(i),Y(v)));
+  ctx.strokeStyle=cssv('--cyan');ctx.lineWidth=1.8;ctx.stroke();
+  ctx.beginPath();ctx.arc(X(vals.length-1),Y(vals[vals.length-1]),3.2,0,7);ctx.fillStyle=cssv('--gold');ctx.fill();
+  const f=new Date(snaps[0].t),l=new Date(snaps[snaps.length-1].t);
+  document.getElementById("sparkinfo").textContent=`${snaps.length} snapshots · ${f.toISOString().slice(0,16).replace("T"," ")} → ${l.toISOString().slice(0,16).replace("T"," ")} UTC · now $${vals[vals.length-1].toLocaleString("en-US")}`;
+}
+
+async function loadFeed(){
+  const rows=[];
+  const cJobs=W.filter(w=>w.chain==="cronos"&&!w.noexpand).map(async w=>{
+    try{const r=await fx(`https://cronos.org/explorer/api?module=account&action=txlist&address=${w.a}&sort=desc&page=1&offset=6`);
+      const j=await r.json();
+      (j.result||[]).forEach(t=>{if(t.value==="0")return;
+        rows.push({key:"c"+t.hash,ts:+t.timeStamp,chain:"Cronos",from:t.from,to:t.to,
+          amt:Number(BigInt(t.value))/1e18,sym:"CRO",price:prices.cro,url:`https://cronoscan.com/tx/${t.hash}`});});}catch(e){}
+  });
+  const eJobs=W.filter(w=>w.chain==="eth").map(async w=>{
+    try{const r=await fx(`https://eth.blockscout.com/api/v2/addresses/${w.a}/transactions?filter=from`);
+      const j=await r.json();
+      (j.items||[]).slice(0,6).forEach(t=>{const v=Number(BigInt(t.value||"0"))/1e18;if(v===0)return;
+        rows.push({key:"e"+t.hash,ts:Math.floor(new Date(t.timestamp).getTime()/1000),chain:"Ethereum",
+          from:(t.from||{}).hash,to:(t.to||{}).hash,amt:v,sym:"ETH",price:prices.eth,url:`https://etherscan.io/tx/${t.hash}`});});}catch(e){}
+  });
+  await Promise.all([...cJobs,...eJobs]);
+  rows.sort((a,b)=>b.ts-a.ts);
+  const s=new Set(),uniq=[];for(const r of rows){if(!s.has(r.key)){s.add(r.key);uniq.push(r);}}
+  const top=uniq.slice(0,40);
+  if(top.length)lastMovementTs=Math.max(lastMovementTs, top[0].ts*1000);
+  const TH=Number(document.getElementById("thresh").value||2000);
+  const knownLabel=a=>{const w=W.find(x=>x.a.toLowerCase()===(a||"").toLowerCase());return w?w.label:short(a);};
+  const tb=document.getElementById("feed");tb.innerHTML="";
+  document.getElementById("feedOv").classList.add("hide");
+  if(!top.length){tb.innerHTML='<tr><td colspan="4" class="muted">no recent transfers</td></tr>';}
+  top.forEach(r=>{
+    const isNew=!seenTx.has(r.key)&&!firstRun;
+    const tr=document.createElement("tr");tr.className=(isNew?"flash-in ":"")+"clickrow";tr.title="View this transfer on the blockchain explorer";tr.onclick=()=>window.open(r.url,"_blank","noopener");
+    const t=new Date(r.ts*1000).toISOString().slice(5,16).replace("T"," ");
+    tr.innerHTML=`<td class="mono" style="font-size:11px">${t}</td>
+      <td><span class="chip" style="color:${r.chain==="Ethereum"?cssv('--violet'):cssv('--gold')};border-color:${r.chain==="Ethereum"?cssv('--violet'):cssv('--gold')}">${r.chain}</span></td>
+      <td style="font-size:11.5px">${knownLabel(r.from)} <span class="muted">→</span> ${knownLabel(r.to)} <span style="color:var(--cyan)">↗</span></td>
+      <td class="num">${fmt(r.amt,r.sym==="ETH"?3:0)} ${r.sym}</td>`;
+    tb.appendChild(tr);
+    // alert on large NEW transfer
+    if(isNew){const usdv=r.amt*(r.price||0); if(usdv>=TH){
+      raiseAlert({msg:`Transfer: <b>${knownLabel(r.from)}</b> → <b>${knownLabel(r.to)}</b> (${r.chain})`,
+        amt:`${fmt(r.amt,r.sym==="ETH"?2:0)} ${r.sym} · ${usd(usdv)}`,url:r.url});}}
+    seenTx.add(r.key);
+  });
+}
+
+// ---- flow canvas ----
+const cv=document.getElementById("flow"),ctx=cv.getContext("2d");
+function drawFlow(){
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const w=cv.clientWidth,h=cv.clientHeight;cv.width=w*dpr;cv.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  const pos={};W.forEach(n=>pos[n.id]={x:20+n.x*(w-40),y:24+n.y*(h-56)});
+  EDGES.forEach(([a,b])=>{const A=pos[a],B=pos[b];if(!A||!B)return;
+    ctx.beginPath();ctx.moveTo(A.x,A.y);const mx=(A.x+B.x)/2;ctx.bezierCurveTo(mx,A.y,mx,B.y,B.x,B.y);
+    ctx.strokeStyle=cssv('--line2');ctx.lineWidth=1.4;ctx.stroke();
+    const ang=Math.atan2(B.y-A.y,B.x-A.x);ctx.save();ctx.translate(B.x-Math.cos(ang)*16,B.y-Math.sin(ang)*16);ctx.rotate(ang);
+    ctx.fillStyle=cssv('--faint');ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(-6,-3);ctx.lineTo(-6,3);ctx.closePath();ctx.fill();ctx.restore();});
+  const maxUsd=Math.max(1,...W.filter(n=>n.id!=="c-gate").map(n=>n.usd||0));
+  W.forEach(n=>{const P=pos[n.id];const c=cssv(ROLECOL[n.role]||"--slate");
+    const r=Math.max(7,9+15*Math.sqrt((n.usd||0)/maxUsd));
+    ctx.beginPath();ctx.arc(P.x,P.y,r,0,7);ctx.fillStyle=c;ctx.globalAlpha=.92;ctx.fill();ctx.globalAlpha=1;
+    ctx.lineWidth=1.4;ctx.strokeStyle="rgba(0,0,0,.4)";ctx.stroke();
+    ctx.fillStyle=cssv('--text');ctx.font="600 10px "+cssv('--mono');ctx.textAlign="center";ctx.textBaseline="top";
+    ctx.shadowColor=cssv('--ink');ctx.shadowBlur=6;ctx.fillText(n.label,P.x,P.y+r+3);
+    const val=n.id==="c-gate"?"":(n.usd?("$"+fmt(n.usd,0)):"");
+    if(val){ctx.fillStyle=cssv('--muted');ctx.font="10px "+cssv('--mono');ctx.fillText(val,P.x,P.y+r+15);}
+    ctx.shadowBlur=0;});
+}
+window.addEventListener("resize",()=>{drawFlow();if(window._snaps)drawSpark(window._snaps);});
+
+// ---- alerts permission ----
+document.getElementById("bellBtn").onclick=async()=>{
+  if(!("Notification"in window)){alert("This browser doesn't support desktop notifications.");return;}
+  const p=await Notification.requestPermission();
+  notify=(p==="granted");
+  const b=document.getElementById("bellBtn");
+  b.textContent=notify?"🔔 Alerts on":"🔔 Alerts off";b.classList.toggle("on",notify);
+  if(notify)new Notification("Alerts enabled",{body:"You'll be notified when funds move ≥ your threshold."});
+};
+
+// jump-to-log links (delegated, since the strip re-renders each poll)
+document.addEventListener("click",e=>{
+  const a=e.target.closest("a.jumplog"); if(!a)return;
+  e.preventDefault();
+  const card=document.getElementById("movecard"), h=document.getElementById("movelog");
+  if(h)h.scrollIntoView({behavior:"smooth",block:"start"});
+  if(card){card.classList.remove("hl");void card.offsetWidth;card.classList.add("hl");}
+});
+
+// ---- loop ----
+let cd=REFRESH;
+function tick(){cd--;if(cd<=0){cd=REFRESH;poll();}document.getElementById("countdown").textContent=cd;}
+document.getElementById("refreshBtn").onclick=()=>{cd=REFRESH;poll();};
+renderHist(); loadLog().then(()=>poll()); setInterval(tick,1000); setInterval(loadLog,300000);
+</script>
+</body>
+</html>

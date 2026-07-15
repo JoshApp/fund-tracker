@@ -1,0 +1,44 @@
+name: track-funds
+
+# Polls the chains on a schedule, logs a snapshot to data/history.json,
+# and sends a Telegram alert when funds move >= the threshold.
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 minutes (GitHub may delay this a few minutes)
+  workflow_dispatch: {}       # lets you run it manually from the Actions tab
+
+permissions:
+  contents: write             # allow the job to commit history back to the repo
+
+concurrency:
+  group: track-funds
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Poll chains & detect movement
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_THRESHOLD_USD: "2000"
+        run: node scripts/poll.mjs
+
+      - name: Commit updated history
+        run: |
+          git config user.name  "fund-tracker-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/history.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: snapshot $(date -u +%FT%TZ) [skip ci]"
+            git push
+          fi
