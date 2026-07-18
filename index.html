@@ -536,23 +536,61 @@ function actionForEvent(e){
   if((e.msg||"").indexOf("🌱")>=0) return {tag:"INFO",cls:"a-info",what:"A new wallet was added to tracking automatically because money moved into it. No action needed — it is now being watched."};
   return actionFor(walletByAddr(e.chain,e.addr));
 }
+// guidance is based on what is NEW and NOT YET REPORTED — never on standing state,
+// so it can't nag forever about something already sent to the police.
+let lastReportedId=+(localStorage.getItem("sft_reportedId")||0);
+let lastReportedAt=+(localStorage.getItem("sft_reportedAt")||0);
+function newFindings(){
+  const out=[];
+  mergedEvents().forEach(e=>{
+    if(e.test) return;
+    if(e.id!=null && e.id<=lastReportedId) return;
+    if(e.id==null && lastReportedAt && parseT(e.t)<=lastReportedAt) return;
+    const a=actionForEvent(e);
+    out.push({act:a.tag.indexOf("ACT")===0, when:e.t, text:(e.msg||"").replace(/<[^>]+>/g,""), what:a.what, url:e.url});
+  });
+  // transfers into an exchange don't create balance-events (the exchange wallet is excluded), so read them from the feed
+  (window._feed||[]).forEach(r=>{
+    const w=walletByAddr(null,r.to);
+    if(!w||!(w.role==="exchange"||EXCH_RE.test(w.label||""))) return;
+    if(r.ts*1000<=lastReportedAt) return;                     // already covered by a previous report
+    if(!lastReportedAt && (Date.now()-r.ts*1000)>7*864e5) return;  // ignore old history on first use
+    out.push({act:true, when:new Date(r.ts*1000).toISOString().slice(0,16).replace("T"," "),
+      text:`${fmt(r.amt,r.sym==="ETH"?3:0)} ${r.sym} sent to ${w.label}`,
+      what:`${w.label} now holds these funds and has identity documents for the account — this is the freezable case. Send the report to the police and to ${w.label}'s compliance team.`, url:r.url});
+  });
+  return out.sort((a,b)=>(b.when||"").localeCompare(a.when||""));
+}
 function renderGuidance(){
   const g=document.getElementById("guide"); if(!g)return;
   const tracked=W.filter(w=>w.id!=="c-gate");
   const stableUsd=tracked.reduce((s,w)=>s+(w.stable||0),0);
-  const stableWallets=tracked.filter(w=>(w.stable||0)>100);
   const idle=tracked.reduce((s,w)=>s+(w.usd||0),0)-stableUsd;
-  const hitExchange=(window._feed||[]).some(r=>{const w=walletByAddr(null,r.to);return w&&(w.role==="exchange"||EXCH_RE.test(w.label||""));});
-  const items=[];
-  if(hitExchange) items.push([`<span class="abadge a-act">ACT NOW</span>`,
-    `<b>Money has just reached an exchange.</b><span class="do">This is the one case where funds can actually be frozen. Contact the exchange's compliance team and tell the police immediately — use the “📄 Police report” button above to generate the document to send.</span>`]);
-  if(stableUsd>100) items.push([`<span class="abadge a-act2">ACT</span>`,
-    `<b>${usd(stableUsd)} is held as stablecoin (USDC/USDT)</b> across ${stableWallets.length} wallet${stableWallets.length===1?"":"s"}.<span class="do">Circle (USDC) and Tether (USDT) can freeze this on a police request. Generate the report above and ask the police to request a freeze on these addresses.</span>`]);
-  items.push([`<span class="abadge a-watch">WATCH</span>`,
-    `<b>${usd(idle)} sits in private wallets</b> as ordinary CRO/ETH.<span class="do">Nothing can be frozen while it sits there — this is normal and not a failure. It is being watched automatically; you'll be alerted (and it will say ACT) the moment it reaches an exchange or is turned into a stablecoin.</span>`]);
-  if(!hitExchange&&stableUsd<=100) items.push([`<span class="abadge a-info">NOTHING TO DO</span>`,
-    `<b>No action is possible right now.</b><span class="do">Keep this page (or Telegram alerts) running. You only need to act when a line above says ACT.</span>`]);
-  g.innerHTML='<h3>What should I do?</h3>'+items.map(i=>`<div class="gitem"><div>${i[0]}</div><div class="t">${i[1]}</div></div>`).join("");
+  const f=newFindings(), acts=f.filter(x=>x.act), infos=f.filter(x=>!x.act);
+  let html='<h3>What should I do?</h3>';
+  if(acts.length){
+    html+=`<div class="gitem"><div><span class="abadge a-act">ACTION NEEDED</span></div><div class="t">
+      <b>${acts.length} new finding${acts.length===1?"":"s"} that isn't in a report yet.</b>
+      <span class="do">${acts.slice(0,4).map(x=>`• <b>${x.when}</b> — ${x.text}<br><span style="opacity:.85">${x.what}</span>`).join("<br>")}</span>
+      <span class="do" style="margin-top:7px"><b>→ Click “📄 Police report” above</b> — it builds the document with these findings and then marks them as reported, so this box goes quiet again.</span></div></div>`;
+  } else {
+    html+=`<div class="gitem"><div><span class="abadge a-info">NOTHING TO DO</span></div><div class="t">
+      <b>Nothing new to report.</b><span class="do">${lastReportedAt?`Everything known so far was included in your last report (${ago(lastReportedAt)}).`:`No new actionable movement has been detected.`} You don't need to do anything — this box will turn red and tell you exactly what happened if that changes.</span></div></div>`;
+  }
+  if(infos.length) html+=`<div class="gitem"><div><span class="abadge a-watch">FYI</span></div><div class="t">
+    <b>${infos.length} other movement${infos.length===1?"":"s"} since your last report</b> — tracked, but nothing can be frozen.
+    <span class="do">${infos.slice(0,3).map(x=>`• ${x.when} — ${x.text}`).join("<br>")}${infos.length>3?`<br>• …and ${infos.length-3} more (see the movement log)`:""}</span></div></div>`;
+  html+=`<div class="gitem"><div><span class="abadge a-watch">STATUS</span></div><div class="t">
+    <b>Where things stand right now</b><span class="do">${usd(idle)} sits in private wallets — nobody can freeze that, which is normal, not a failure.${stableUsd>100?` ${usd(stableUsd)} is held as USDC/USDT, which Circle/Tether could freeze on a police request.`:""} Funds that reached Gate.io earlier are already part of the existing case.</span></div></div>`;
+  g.innerHTML=html;
+}
+function markReported(){
+  const ids=mergedEvents().map(e=>e.id||0);
+  lastReportedId=Math.max(lastReportedId,maxServerId,...(ids.length?ids:[0]));
+  lastReportedAt=Date.now();
+  localStorage.setItem("sft_reportedId",lastReportedId);
+  localStorage.setItem("sft_reportedAt",lastReportedAt);
+  renderGuidance();
 }
 
 // ---- self-service PDF report for the police ----
@@ -562,6 +600,7 @@ function generateReport(){
   const stableUsd=tracked.reduce((s,w)=>s+(w.stable||0),0);
   const total=tracked.reduce((s,w)=>s+(w.usd||0),0);
   const evs=mergedEvents().filter(e=>!e.test).slice(0,40);
+  const findings=newFindings();
   const expl=w=>w.chain==="eth"?`https://etherscan.io/address/${w.a}`:`https://cronoscan.com/address/${w.a}`;
   const S={h1:"font:700 19px Georgia,serif;margin:0 0 4px",sub:"font:12px system-ui;color:#555;margin:0 0 16px",
     h2:"font:700 11px system-ui;letter-spacing:.09em;text-transform:uppercase;color:#8a1c1c;border-bottom:1.5px solid #8a1c1c;padding-bottom:4px;margin:20px 0 8px",
@@ -595,6 +634,10 @@ function generateReport(){
     <p style="${S.p}"><b>Total currently held in tracked wallets: ${usd(total)}</b>, of which <b>${usd(stableUsd)}</b> is held as the stablecoins USDC/USDT and <b>${usd(total-stableUsd)}</b> as ordinary coins (CRO/ETH). Tracked wallets: ${tracked.length}.</p>
     <table style="border-collapse:collapse;width:100%"><tr><th style="${S.th}">Wallet address</th><th style="${S.th}">Holdings</th><th style="${S.th}">Value</th><th style="${S.th}">Status</th></tr>${walletRows}</table>
 
+    ${findings.length?`<h2 style="${S.h2}">2b. New since the previous report</h2>
+    <div style="${S.box}">The following was detected <b>after the last report was generated${lastReportedAt?` (`+new Date(lastReportedAt).toISOString().slice(0,16).replace("T"," ")+` UTC)`:""}</b> and is the reason this document was produced:<br><br>
+      ${findings.slice(0,10).map(f=>`&bull; <b>${f.when}</b> — ${f.text}${f.act?` <b>[ACTION POSSIBLE]</b><br><span style="color:#444">${f.what}</span>`:` <i>(tracked only — cannot be frozen)</i>`}`).join("<br><br>")}
+    </div>`:""}
     <h2 style="${S.h2}">3. What has moved</h2>
     <p style="${S.p}">Movements detected by the monitor, newest first. "ACT" means something can be done about it; "WATCH" means the funds are in a private wallet where no company can freeze them.</p>
     <table style="border-collapse:collapse;width:100%"><tr><th style="${S.th}">When (UTC)</th><th style="${S.th}">What happened</th><th style="${S.th}">Amount</th><th style="${S.th}">Status</th></tr>${evRows||`<tr><td style="${S.td}" colspan="4">No movements recorded yet.</td></tr>`}</table>
@@ -612,7 +655,7 @@ function generateReport(){
       Balances and values are live snapshots at the moment of generation and will change as funds move. Prices are approximate market rates. Generated by an automated blockchain-monitoring tool; figures are derived from public chain data.</p>
    </div>`;
   document.body.classList.add("printing");
-  setTimeout(()=>{ window.print(); setTimeout(()=>document.body.classList.remove("printing"),600); },80);
+  setTimeout(()=>{ window.print(); setTimeout(()=>{document.body.classList.remove("printing"); markReported();},600); },80);
 }
 
 // ---- flow canvas ----
