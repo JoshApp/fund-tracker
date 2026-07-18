@@ -103,6 +103,25 @@
     border:none;border-radius:7px;padding:6px 12px;cursor:pointer;font-weight:700}
   .newbadge{display:inline-block;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.06em;
     background:var(--cyan);color:var(--ink);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:1px}
+  /* what-to-do guidance */
+  .guide{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:16px}
+  .guide h3{margin:0 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-family:var(--mono)}
+  .gitem{display:flex;gap:11px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line)}
+  .gitem:nth-of-type(1){border-top:none}
+  .gitem .t{font-size:13.5px;flex:1}
+  .gitem .t .do{display:block;color:var(--muted);font-size:12.5px;margin-top:3px}
+  .abadge{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;padding:2px 6px;border-radius:5px;border:1px solid;white-space:nowrap}
+  .a-act{color:var(--coral);border-color:var(--coral);background:color-mix(in srgb,var(--coral) 15%,transparent)}
+  .a-act2{color:var(--gold);border-color:var(--gold);background:color-mix(in srgb,var(--gold) 15%,transparent)}
+  .a-watch{color:var(--slate);border-color:var(--slate)}
+  .a-info{color:var(--cyan);border-color:var(--cyan)}
+  button.pdf{font-family:var(--mono);font-size:12px;color:var(--ink);background:var(--cyan);border:none;
+    border-radius:7px;padding:6px 11px;cursor:pointer;margin-left:8px;font-weight:700}
+  /* printable police report */
+  #report{display:none}
+  body.printing .wrap{display:none}
+  body.printing #report{display:block}
+  @media print{ body{background:#fff} #report{color:#000} a{color:#14418a} }
   html{scroll-behavior:smooth}
   a.jumplog{cursor:pointer} a.jumplog:hover{text-decoration:underline}
   tr.clickrow{cursor:pointer} tr.clickrow:hover td{background:color-mix(in srgb,var(--cyan) 9%,transparent)}
@@ -119,7 +138,8 @@
       <div><span class="dot" id="dot"></span><span id="statustxt">starting&hellip;</span></div>
       <div>updated <b id="updated">—</b> &middot; next in <b id="countdown">—</b>s
         <button class="bell" id="bellBtn" type="button" title="Enable desktop alerts">🔔 Alerts off</button>
-        <button class="rf" id="refreshBtn" type="button">Refresh now</button></div>
+        <button class="rf" id="refreshBtn" type="button">Refresh now</button>
+        <button class="pdf" id="pdfBtn" type="button" title="Create a PDF report for the police">📄 Police report</button></div>
       <div class="thresh" style="margin-top:5px">alert on moves ≥ $<input id="thresh" type="number" value="2000" min="0"/></div>
     </div>
   </header>
@@ -127,6 +147,7 @@
   <div id="alerts"></div>
   <div class="visit" id="visit"></div>
   <div class="strip" id="strip"><span class="muted">loading status…</span></div>
+  <div class="guide" id="guide"><h3>What should I do?</h3><div class="muted" style="font-size:13px">checking…</div></div>
 
   <div class="tiles">
     <div class="tile" style="--k:var(--cyan)"><div class="lab">Total traced value</div><div class="val sk" id="t-total">·····</div><div class="sub" id="t-total-sub">across both chains</div></div>
@@ -179,6 +200,7 @@
 
   <div class="foot">Read-only viewer &middot; data polled live from public Cronos &amp; Ethereum nodes and block explorers &middot; history &amp; alerts stored in your browser &middot; not financial or legal advice.</div>
 </div>
+<div id="report"></div>
 
 <script>
 "use strict";
@@ -356,7 +378,10 @@ function renderHist(){
     const isNew=(h.id!=null)&&lastSeenId!=null&&h.id>lastSeenId;
     const link=h.url?` <span style="color:var(--cyan)">↗</span>`:"";
     const tr=document.createElement("tr");
-    tr.innerHTML=`<td class="mono" style="font-size:11px">${h.t}</td><td style="font-size:12px">${h.msg}${link}${isNew?'<span class="newbadge">NEW</span>':''}</td><td class="num">${h.amt||""}</td>`;
+    const act=actionForEvent(h);
+    const advice=act.tag.indexOf("ACT")===0?`<span style="display:block;color:var(--muted);font-size:11.5px;margin-top:3px">${act.what}</span>`:"";
+    tr.innerHTML=`<td class="mono" style="font-size:11px">${h.t}</td><td style="font-size:12px">${h.msg}${link}${isNew?'<span class="newbadge">NEW</span>':''} <span class="abadge ${act.cls}">${act.tag}</span>${advice}</td><td class="num">${h.amt||""}</td>`;
+    tr.title=act.what;
     if(h.url){tr.className="clickrow";tr.title="View on blockchain explorer";tr.onclick=()=>window.open(h.url,"_blank","noopener");}
     tb.appendChild(tr);
   });
@@ -382,6 +407,7 @@ function updateStatus(){
      <span class="sep"></span><span><span class="muted">Did it move?</span> <a class="jumplog ${movedRecently?'moved-yes':'moved-no'}" href="#movelog">${movedRecently?'YES — '+ago(lastAny):'no movement in 24h'} &rsaquo;</a></span>
      <span class="sep"></span><span>${mon}</span>`;
   const wc=document.getElementById("wcount"); if(wc)wc.textContent="— "+W.filter(w=>w.id!=="c-gate").length+" wallets tracked";
+  renderGuidance();
   // since-last-visit — only real movements trigger this (never price drift)
   const v=document.getElementById("visit");
   if(lastSeenId===null){ // first ever visit: baseline to current, no backlog banner
@@ -468,6 +494,7 @@ async function loadFeed(){
   const s=new Set(),uniq=[];for(const r of rows){if(!s.has(r.key)){s.add(r.key);uniq.push(r);}}
   const top=uniq.slice(0,40);
   if(top.length)lastMovementTs=Math.max(lastMovementTs, top[0].ts*1000);
+  window._feed=top;
   const TH=Number(document.getElementById("thresh").value||2000);
   const knownLabel=a=>{const w=W.find(x=>x.a.toLowerCase()===(a||"").toLowerCase());return w?w.label:short(a);};
   const tb=document.getElementById("feed");tb.innerHTML="";
@@ -491,28 +518,141 @@ async function loadFeed(){
   if(fs)fs.innerHTML="";
 }
 
+// ---- ACTION GUIDANCE: is this movement important, and what can be done about it? ----
+const EXCH_RE=/gate|binance|kraken|coinbase|bitget|okx|kucoin|mexc|bybit|huobi|bitfinex|exchange/i;
+function walletByAddr(chain,addr){return W.find(x=>(x.a||"").toLowerCase()===(addr||"").toLowerCase()&&(!chain||x.chain===chain));}
+function actionFor(w){
+  if(w&&(w.role==="exchange"||EXCH_RE.test(w.label||"")))
+    return {tag:"ACT NOW",cls:"a-act",
+      what:"The money reached an exchange — a company that holds it and knows who the account belongs to. Tell the police and the exchange's compliance team NOW: funds at an exchange can be frozen and the owner identified."};
+  if(w&&(w.stable||0)>100)
+    return {tag:"ACT",cls:"a-act2",
+      what:"The money is held as a stablecoin (USDC/USDT), which is issued by a company. Circle (USDC) and Tether (USDT) can freeze it on a police request — give the police this address and ask them to request a freeze."};
+  return {tag:"WATCH",cls:"a-watch",
+    what:"The money sits in a private wallet as an ordinary coin (CRO/ETH) — no company controls it, so nothing can be frozen right now. That is normal. It stays tracked and you'll be alerted the moment it reaches an exchange or becomes a stablecoin."};
+}
+function actionForEvent(e){
+  if(e.test) return {tag:"TEST",cls:"a-info",what:"This was a manual test of the alert system — no real money moved."};
+  if((e.msg||"").indexOf("🌱")>=0) return {tag:"INFO",cls:"a-info",what:"A new wallet was added to tracking automatically because money moved into it. No action needed — it is now being watched."};
+  return actionFor(walletByAddr(e.chain,e.addr));
+}
+function renderGuidance(){
+  const g=document.getElementById("guide"); if(!g)return;
+  const tracked=W.filter(w=>w.id!=="c-gate");
+  const stableUsd=tracked.reduce((s,w)=>s+(w.stable||0),0);
+  const stableWallets=tracked.filter(w=>(w.stable||0)>100);
+  const idle=tracked.reduce((s,w)=>s+(w.usd||0),0)-stableUsd;
+  const hitExchange=(window._feed||[]).some(r=>{const w=walletByAddr(null,r.to);return w&&(w.role==="exchange"||EXCH_RE.test(w.label||""));});
+  const items=[];
+  if(hitExchange) items.push([`<span class="abadge a-act">ACT NOW</span>`,
+    `<b>Money has just reached an exchange.</b><span class="do">This is the one case where funds can actually be frozen. Contact the exchange's compliance team and tell the police immediately — use the “📄 Police report” button above to generate the document to send.</span>`]);
+  if(stableUsd>100) items.push([`<span class="abadge a-act2">ACT</span>`,
+    `<b>${usd(stableUsd)} is held as stablecoin (USDC/USDT)</b> across ${stableWallets.length} wallet${stableWallets.length===1?"":"s"}.<span class="do">Circle (USDC) and Tether (USDT) can freeze this on a police request. Generate the report above and ask the police to request a freeze on these addresses.</span>`]);
+  items.push([`<span class="abadge a-watch">WATCH</span>`,
+    `<b>${usd(idle)} sits in private wallets</b> as ordinary CRO/ETH.<span class="do">Nothing can be frozen while it sits there — this is normal and not a failure. It is being watched automatically; you'll be alerted (and it will say ACT) the moment it reaches an exchange or is turned into a stablecoin.</span>`]);
+  if(!hitExchange&&stableUsd<=100) items.push([`<span class="abadge a-info">NOTHING TO DO</span>`,
+    `<b>No action is possible right now.</b><span class="do">Keep this page (or Telegram alerts) running. You only need to act when a line above says ACT.</span>`]);
+  g.innerHTML='<h3>What should I do?</h3>'+items.map(i=>`<div class="gitem"><div>${i[0]}</div><div class="t">${i[1]}</div></div>`).join("");
+}
+
+// ---- self-service PDF report for the police ----
+function generateReport(){
+  const now=new Date().toISOString().slice(0,19).replace("T"," ");
+  const tracked=W.filter(w=>w.id!=="c-gate");
+  const stableUsd=tracked.reduce((s,w)=>s+(w.stable||0),0);
+  const total=tracked.reduce((s,w)=>s+(w.usd||0),0);
+  const evs=mergedEvents().filter(e=>!e.test).slice(0,40);
+  const expl=w=>w.chain==="eth"?`https://etherscan.io/address/${w.a}`:`https://cronoscan.com/address/${w.a}`;
+  const S={h1:"font:700 19px Georgia,serif;margin:0 0 4px",sub:"font:12px system-ui;color:#555;margin:0 0 16px",
+    h2:"font:700 11px system-ui;letter-spacing:.09em;text-transform:uppercase;color:#8a1c1c;border-bottom:1.5px solid #8a1c1c;padding-bottom:4px;margin:20px 0 8px",
+    p:"font:13px system-ui;margin:0 0 9px;line-height:1.5",
+    box:"font:13px system-ui;background:#f6f7f9;border:1px solid #d7dae0;border-left:4px solid #8a1c1c;padding:10px 13px;margin:8px 0;line-height:1.5",
+    th:"font:600 10px system-ui;text-transform:uppercase;color:#555;border:1px solid #ccc;padding:5px 7px;text-align:left;background:#f6f7f9",
+    td:"font:11px system-ui;border:1px solid #ccc;padding:5px 7px;vertical-align:top",
+    mono:"font-family:ui-monospace,Menlo,monospace;font-size:10px;word-break:break-all"};
+  const walletRows=tracked.filter(w=>(w.usd||0)>1).sort((a,b)=>(b.usd||0)-(a.usd||0)).map(w=>{
+    const a=actionFor(w);
+    return `<tr><td style="${S.td}"><span style="${S.mono}">${w.a}</span><br><span style="color:#666">${w.label} · ${w.chain==="eth"?"Ethereum":"Cronos"}</span></td>
+      <td style="${S.td};text-align:right;white-space:nowrap">${fmt(w.native,w.chain==="eth"?3:0)} ${w.chain==="eth"?"ETH":"CRO"}${w.stable?`<br>${fmt(w.stable,0)} USDC/USDT`:""}</td>
+      <td style="${S.td};text-align:right">${usd(w.usd||0)}</td>
+      <td style="${S.td}"><b>${a.tag}</b></td></tr>`;}).join("");
+  const evRows=evs.map(e=>{const a=actionForEvent(e);
+    return `<tr><td style="${S.td};white-space:nowrap">${e.t}</td>
+      <td style="${S.td}">${(e.msg||"").replace(/<[^>]+>/g,"")}<br><span style="${S.mono}">${e.url?e.url.split("/").pop():""}</span></td>
+      <td style="${S.td};text-align:right;white-space:nowrap">${e.amt||""}</td>
+      <td style="${S.td}"><b>${a.tag}</b></td></tr>`;}).join("");
+  document.getElementById("report").innerHTML=`
+   <div style="max-width:820px;margin:0 auto;padding:20px 24px;background:#fff;color:#141821">
+    <h1 style="${S.h1}">Cryptocurrency Fraud — Automated Fund-Tracking Report</h1>
+    <p style="${S.sub}">Generated ${now} UTC · Blockchains: Cronos (chain ID 25) &amp; Ethereum · Live data from public blockchain nodes</p>
+
+    <h2 style="${S.h2}">1. What this document is</h2>
+    <p style="${S.p}">This report is produced automatically by a monitoring tool that watches the wallets the stolen funds were traced to, on the public Cronos and Ethereum blockchains. Every figure comes from public blockchain records and <b>can be independently verified by anyone</b> using the explorer links included. It is provided to assist an investigation; it is not a legal determination.</p>
+    <div style="${S.box}"><b>Reporting party:</b> ______________________________  &nbsp;&nbsp; <b>Contact:</b> ______________________________<br>
+    <b>Police case / reference number:</b> ______________________________</div>
+
+    <h2 style="${S.h2}">2. Current position — where the money is now</h2>
+    <p style="${S.p}"><b>Total currently held in tracked wallets: ${usd(total)}</b>, of which <b>${usd(stableUsd)}</b> is held as the stablecoins USDC/USDT and <b>${usd(total-stableUsd)}</b> as ordinary coins (CRO/ETH). Tracked wallets: ${tracked.length}.</p>
+    <table style="border-collapse:collapse;width:100%"><tr><th style="${S.th}">Wallet address</th><th style="${S.th}">Holdings</th><th style="${S.th}">Value</th><th style="${S.th}">Status</th></tr>${walletRows}</table>
+
+    <h2 style="${S.h2}">3. What has moved</h2>
+    <p style="${S.p}">Movements detected by the monitor, newest first. "ACT" means something can be done about it; "WATCH" means the funds are in a private wallet where no company can freeze them.</p>
+    <table style="border-collapse:collapse;width:100%"><tr><th style="${S.th}">When (UTC)</th><th style="${S.th}">What happened</th><th style="${S.th}">Amount</th><th style="${S.th}">Status</th></tr>${evRows||`<tr><td style="${S.td}" colspan="4">No movements recorded yet.</td></tr>`}</table>
+
+    <h2 style="${S.h2}">4. What can be done — requested actions</h2>
+    <div style="${S.box}"><b>a) Funds at an exchange (marked ACT NOW).</b> An exchange holds the funds and holds identity documents for the account. Please ask the exchange's compliance team to <b>identify the crediting account, freeze it, and preserve the KYC records</b>, quoting the transaction IDs in section 3.</div>
+    <div style="${S.box}"><b>b) Funds held as stablecoins USDC / USDT (marked ACT).</b> These are issued by companies — <b>Circle</b> (USDC) and <b>Tether</b> (USDT) — which can <b>freeze/blacklist</b> the tokens at a specific address on a law-enforcement request. Please request a freeze on the addresses marked ACT in section 2.</div>
+    <div style="${S.box}"><b>c) Funds in private wallets (marked WATCH).</b> These are ordinary coins in wallets controlled by the perpetrators; no company can freeze them in place. They can be recovered only if they are moved to an exchange (then frozen there) or the wallet keys are seized. <b>These addresses should be monitored</b> — this tool does so automatically and records every movement.</div>
+    <p style="${S.p}"><b>Cross-border note:</b> the exchanges and issuers involved operate internationally; coordination via Europol/Interpol may be required.</p>
+
+    <h2 style="${S.h2}">5. How to verify this report</h2>
+    <p style="${S.p}">Every address and transaction can be checked on the public block explorers — no account or software needed:</p>
+    <p style="${S.p}">Cronos: <b>https://cronoscan.com/address/&lt;address&gt;</b> &nbsp;·&nbsp; Ethereum: <b>https://etherscan.io/address/&lt;address&gt;</b></p>
+    <p style="font:11px system-ui;color:#666;margin-top:18px;border-top:1px solid #ccc;padding-top:10px">
+      Balances and values are live snapshots at the moment of generation and will change as funds move. Prices are approximate market rates. Generated by an automated blockchain-monitoring tool; figures are derived from public chain data.</p>
+   </div>`;
+  document.body.classList.add("printing");
+  setTimeout(()=>{ window.print(); setTimeout(()=>document.body.classList.remove("printing"),600); },80);
+}
+
 // ---- flow canvas ----
 const cv=document.getElementById("flow"),ctx=cv.getContext("2d");
 function drawFlow(){
+  const core=W.filter(n=>n.x!=null);            // known trail (fixed positions)
+  const autos=W.filter(n=>n.x==null);           // auto-discovered wallets — the map grows for these
+  const PER_ROW=6, CORE_H=360, ROW_H=58;
+  const rows=Math.ceil(autos.length/PER_ROW);
+  cv.style.height=(CORE_H+(rows?rows*ROW_H+26:0))+"px";   // canvas expands as the trail grows
   const dpr=Math.min(window.devicePixelRatio||1,2);
   const w=cv.clientWidth,h=cv.clientHeight;cv.width=w*dpr;cv.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,w,h);
-  const core=W.filter(n=>n.x!=null);   // map shows the known trail; auto-added wallets live in the table + log
-  const pos={};core.forEach(n=>pos[n.id]={x:20+n.x*(w-40),y:24+n.y*(h-56)});
-  EDGES.forEach(([a,b])=>{const A=pos[a],B=pos[b];if(!A||!B)return;
+  const pos={};core.forEach(n=>pos[n.id]={x:20+n.x*(w-40),y:24+n.y*(CORE_H-56)});
+  // lay out discovered wallets in rows beneath the known trail
+  autos.forEach((n,i)=>{ const col=i%PER_ROW, row=Math.floor(i/PER_ROW);
+    const span=(w-70)/Math.max(1,PER_ROW-1);
+    pos[n.id]={ x:35+col*span, y:CORE_H+30+row*ROW_H, auto:true }; });
+  // edges: the known trail + every discovered wallet linked to the wallet it came from
+  const byAddr={}; W.forEach(x=>{ byAddr[x.chain+":"+(x.a||"").toLowerCase()]=x.id; });
+  const allEdges=[...EDGES];
+  autos.forEach(n=>{ const src=byAddr[n.chain+":"+(n.from||"").toLowerCase()]; if(src&&pos[src]) allEdges.push([src,n.id]); });
+  if(rows){ ctx.fillStyle=cssv('--faint');ctx.font="9px "+cssv('--mono');ctx.textAlign="left";ctx.textBaseline="top";
+    ctx.fillText("DISCOVERED BY AUTO-FOLLOW",20,CORE_H+4); }
+  allEdges.forEach(([a,b])=>{const A=pos[a],B=pos[b];if(!A||!B)return;
     ctx.beginPath();ctx.moveTo(A.x,A.y);const mx=(A.x+B.x)/2;ctx.bezierCurveTo(mx,A.y,mx,B.y,B.x,B.y);
     ctx.strokeStyle=cssv('--line2');ctx.lineWidth=1.4;ctx.stroke();
     const ang=Math.atan2(B.y-A.y,B.x-A.x);ctx.save();ctx.translate(B.x-Math.cos(ang)*16,B.y-Math.sin(ang)*16);ctx.rotate(ang);
     ctx.fillStyle=cssv('--faint');ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(-6,-3);ctx.lineTo(-6,3);ctx.closePath();ctx.fill();ctx.restore();});
-  const maxUsd=Math.max(1,...core.filter(n=>n.id!=="c-gate").map(n=>n.usd||0));
-  core.forEach(n=>{const P=pos[n.id];const c=cssv(ROLECOL[n.role]||"--slate");
-    const r=Math.max(7,9+15*Math.sqrt((n.usd||0)/maxUsd));
-    ctx.beginPath();ctx.arc(P.x,P.y,r,0,7);ctx.fillStyle=c;ctx.globalAlpha=.92;ctx.fill();ctx.globalAlpha=1;
+  const maxUsd=Math.max(1,...W.filter(n=>n.id!=="c-gate").map(n=>n.usd||0));
+  W.forEach(n=>{const P=pos[n.id];if(!P)return;
+    const isAuto=!!P.auto; const c=isAuto?cssv('--cyan'):cssv(ROLECOL[n.role]||"--slate");
+    const r=isAuto?Math.max(5,6+9*Math.sqrt((n.usd||0)/maxUsd)):Math.max(7,9+15*Math.sqrt((n.usd||0)/maxUsd));
+    ctx.beginPath();ctx.arc(P.x,P.y,r,0,7);ctx.fillStyle=c;ctx.globalAlpha=isAuto?.85:.92;ctx.fill();ctx.globalAlpha=1;
     ctx.lineWidth=1.4;ctx.strokeStyle="rgba(0,0,0,.4)";ctx.stroke();
-    ctx.fillStyle=cssv('--text');ctx.font="600 10px "+cssv('--mono');ctx.textAlign="center";ctx.textBaseline="top";
-    ctx.shadowColor=cssv('--ink');ctx.shadowBlur=6;ctx.fillText(n.label,P.x,P.y+r+3);
+    ctx.fillStyle=cssv('--text');ctx.font=(isAuto?"600 9px ":"600 10px ")+cssv('--mono');ctx.textAlign="center";ctx.textBaseline="top";
+    ctx.shadowColor=cssv('--ink');ctx.shadowBlur=6;
+    ctx.fillText(isAuto?short(n.a):n.label,P.x,P.y+r+3);
     const val=n.id==="c-gate"?"":(n.usd?("$"+fmt(n.usd,0)):"");
-    if(val){ctx.fillStyle=cssv('--muted');ctx.font="10px "+cssv('--mono');ctx.fillText(val,P.x,P.y+r+15);}
+    if(val){ctx.fillStyle=cssv('--muted');ctx.font=(isAuto?"9px ":"10px ")+cssv('--mono');ctx.fillText(val,P.x,P.y+r+(isAuto?13:15));}
     ctx.shadowBlur=0;});
 }
 window.addEventListener("resize",()=>{drawFlow();if(window._snaps)drawSpark(window._snaps);});
@@ -540,6 +680,7 @@ document.addEventListener("click",e=>{
 let cd=REFRESH;
 function tick(){cd--;if(cd<=0){cd=REFRESH;poll();}document.getElementById("countdown").textContent=cd;}
 document.getElementById("refreshBtn").onclick=()=>{cd=REFRESH;poll();};
+document.getElementById("pdfBtn").onclick=generateReport;
 renderHist(); loadWallets().then(loadLog).then(poll); setInterval(tick,1000); setInterval(()=>{loadWallets();loadLog();},300000);
 </script>
 </body>
