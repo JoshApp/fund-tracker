@@ -540,49 +540,76 @@ function actionForEvent(e){
 // so it can't nag forever about something already sent to the police.
 let lastReportedId=+(localStorage.getItem("sft_reportedId")||0);
 let lastReportedAt=+(localStorage.getItem("sft_reportedAt")||0);
-function newFindings(){
+// Two separate states: SEEN (you looked at it) and HANDLED (you did something).
+// Non-actionable movements die on being seen. Actionable ones stay open until reported or marked handled.
+let seenAct=new Set(JSON.parse(localStorage.getItem("sft_seenAct")||"[]"));
+let handled=new Set(JSON.parse(localStorage.getItem("sft_handled")||"[]"));
+let seenTimer=null;
+function saveSet(k,s){localStorage.setItem(k,JSON.stringify([...s]));}
+function markHandled(key){ handled.add(key); saveSet("sft_handled",handled); renderGuidance(); }
+window.markHandled=markHandled;
+
+function allFindings(){
   const out=[];
   mergedEvents().forEach(e=>{
     if(e.test) return;
-    if(e.id!=null && e.id<=lastReportedId) return;
-    if(e.id==null && lastReportedAt && parseT(e.t)<=lastReportedAt) return;
     const a=actionForEvent(e);
-    out.push({act:a.tag.indexOf("ACT")===0, when:e.t, text:(e.msg||"").replace(/<[^>]+>/g,""), what:a.what, url:e.url});
+    out.push({key:"e"+(e.id!=null?e.id:e.t), id:e.id, ts:parseT(e.t), act:a.tag.indexOf("ACT")===0,
+      when:e.t, text:(e.msg||"").replace(/<[^>]+>/g,""), what:a.what, url:e.url});
   });
-  // transfers into an exchange don't create balance-events (the exchange wallet is excluded), so read them from the feed
+  // transfers into an exchange never create balance-events (the exchange wallet is excluded) — read them from the feed
   (window._feed||[]).forEach(r=>{
     const w=walletByAddr(null,r.to);
     if(!w||!(w.role==="exchange"||EXCH_RE.test(w.label||""))) return;
-    if(r.ts*1000<=lastReportedAt) return;                     // already covered by a previous report
-    if(!lastReportedAt && (Date.now()-r.ts*1000)>7*864e5) return;  // ignore old history on first use
-    out.push({act:true, when:new Date(r.ts*1000).toISOString().slice(0,16).replace("T"," "),
+    if(!lastReportedAt && (Date.now()-r.ts*1000)>7*864e5) return;   // ignore old history on first use
+    out.push({key:"f"+String(r.url||"").split("/").pop(), id:null, ts:r.ts*1000, act:true,
+      when:new Date(r.ts*1000).toISOString().slice(0,16).replace("T"," "),
       text:`${fmt(r.amt,r.sym==="ETH"?3:0)} ${r.sym} sent to ${w.label}`,
       what:`${w.label} now holds these funds and has identity documents for the account — this is the freezable case. Send the report to the police and to ${w.label}'s compliance team.`, url:r.url});
   });
   return out.sort((a,b)=>(b.when||"").localeCompare(a.when||""));
 }
+const isReported=x=> x.id!=null ? x.id<=lastReportedId : (lastReportedAt>0 && x.ts<=lastReportedAt);
+const isSeenEv =x=> x.id!=null && lastSeenId!=null && x.id<=lastSeenId;
+
 function renderGuidance(){
   const g=document.getElementById("guide"); if(!g)return;
   const tracked=W.filter(w=>w.id!=="c-gate");
   const stableUsd=tracked.reduce((s,w)=>s+(w.stable||0),0);
   const idle=tracked.reduce((s,w)=>s+(w.usd||0),0)-stableUsd;
-  const f=newFindings(), acts=f.filter(x=>x.act), infos=f.filter(x=>!x.act);
+  const all=allFindings().filter(x=>!handled.has(x.key));
+  const acts=all.filter(x=>x.act && !isReported(x));
+  const fresh=acts.filter(x=>!seenAct.has(x.key));       // never looked at → shout
+  const open =acts.filter(x=>seenAct.has(x.key));        // looked at, still not dealt with → calm but present
+  const fyis =all.filter(x=>!x.act && !isSeenEv(x));     // nothing to act on → clears once seen
   let html='<h3>What should I do?</h3>';
-  if(acts.length){
+  if(fresh.length){
     html+=`<div class="gitem"><div><span class="abadge a-act">ACTION NEEDED</span></div><div class="t">
-      <b>${acts.length} new finding${acts.length===1?"":"s"} that isn't in a report yet.</b>
-      <span class="do">${acts.slice(0,4).map(x=>`• <b>${x.when}</b> — ${x.text}<br><span style="opacity:.85">${x.what}</span>`).join("<br>")}</span>
-      <span class="do" style="margin-top:7px"><b>→ Click “📄 Police report” above</b> — it builds the document with these findings and then marks them as reported, so this box goes quiet again.</span></div></div>`;
-  } else {
-    html+=`<div class="gitem"><div><span class="abadge a-info">NOTHING TO DO</span></div><div class="t">
-      <b>Nothing new to report.</b><span class="do">${lastReportedAt?`Everything known so far was included in your last report (${ago(lastReportedAt)}).`:`No new actionable movement has been detected.`} You don't need to do anything — this box will turn red and tell you exactly what happened if that changes.</span></div></div>`;
+      <b>${fresh.length} new finding${fresh.length===1?"":"s"} you haven't seen yet.</b>
+      <span class="do">${fresh.slice(0,4).map(x=>`• <b>${x.when}</b> — ${x.text}<br><span style="opacity:.85">${x.what}</span>`).join("<br>")}</span>
+      <span class="do" style="margin-top:7px"><b>→ Click “📄 Police report” above.</b> It builds the document with these findings and marks them done.</span></div></div>`;
   }
-  if(infos.length) html+=`<div class="gitem"><div><span class="abadge a-watch">FYI</span></div><div class="t">
-    <b>${infos.length} other movement${infos.length===1?"":"s"} since your last report</b> — tracked, but nothing can be frozen.
-    <span class="do">${infos.slice(0,3).map(x=>`• ${x.when} — ${x.text}`).join("<br>")}${infos.length>3?`<br>• …and ${infos.length-3} more (see the movement log)`:""}</span></div></div>`;
+  if(open.length){
+    html+=`<div class="gitem"><div><span class="abadge a-act2">OPEN</span></div><div class="t">
+      <b>${open.length} item${open.length===1?"":"s"} still waiting to be reported.</b>
+      <span class="do">${open.slice(0,5).map(x=>`• <b>${x.when}</b> — ${x.text} <button onclick="markHandled('${x.key}')" style="font:600 10px var(--mono);background:none;border:1px solid var(--line2);color:var(--muted);border-radius:5px;padding:1px 6px;cursor:pointer;margin-left:4px">already handled</button>`).join("<br>")}</span>
+      <span class="do">These stay here until you generate a report — or mark them handled if you've already dealt with them another way.</span></div></div>`;
+  }
+  if(!fresh.length && !open.length){
+    html+=`<div class="gitem"><div><span class="abadge a-info">NOTHING TO DO</span></div><div class="t">
+      <b>Nothing needs your attention.</b><span class="do">${lastReportedAt?`Everything actionable was covered by your last report (${ago(lastReportedAt)}).`:`No actionable movement has been detected.`} You'll see a red box here — and get a Telegram alert — if that changes.</span></div></div>`;
+  }
+  if(fyis.length) html+=`<div class="gitem"><div><span class="abadge a-watch">FYI</span></div><div class="t">
+    <b>${fyis.length} movement${fyis.length===1?"":"s"} since you last looked</b> — tracked, but nothing can be frozen, so there's nothing to do.
+    <span class="do">${fyis.slice(0,3).map(x=>`• ${x.when} — ${x.text}`).join("<br>")}${fyis.length>3?`<br>• …and ${fyis.length-3} more (see the movement log)`:""}</span></div></div>`;
   html+=`<div class="gitem"><div><span class="abadge a-watch">STATUS</span></div><div class="t">
     <b>Where things stand right now</b><span class="do">${usd(idle)} sits in private wallets — nobody can freeze that, which is normal, not a failure.${stableUsd>100?` ${usd(stableUsd)} is held as USDC/USDT, which Circle/Tether could freeze on a police request.`:""} Funds that reached Gate.io earlier are already part of the existing case.</span></div></div>`;
   g.innerHTML=html;
+  // after you've had a few seconds to read it, a fresh alert becomes a calm open item (seen ≠ handled)
+  if(fresh.length && !seenTimer){
+    seenTimer=setTimeout(()=>{ seenTimer=null; fresh.forEach(x=>seenAct.add(x.key));
+      saveSet("sft_seenAct",seenAct); renderGuidance(); }, 7000);
+  }
 }
 function markReported(){
   const ids=mergedEvents().map(e=>e.id||0);
