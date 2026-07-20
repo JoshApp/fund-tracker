@@ -627,7 +627,7 @@ function generateReport(){
   const stableUsd=tracked.reduce((s,w)=>s+(w.stable||0),0);
   const total=tracked.reduce((s,w)=>s+(w.usd||0),0);
   const evs=mergedEvents().filter(e=>!e.test).slice(0,40);
-  const findings=newFindings();
+  const findings=allFindings().filter(x=>!isReported(x));   // new since the last report
   const expl=w=>w.chain==="eth"?`https://etherscan.io/address/${w.a}`:`https://cronoscan.com/address/${w.a}`;
   const S={h1:"font:700 19px Georgia,serif;margin:0 0 4px",sub:"font:12px system-ui;color:#555;margin:0 0 16px",
     h2:"font:700 11px system-ui;letter-spacing:.09em;text-transform:uppercase;color:#8a1c1c;border-bottom:1.5px solid #8a1c1c;padding-bottom:4px;margin:20px 0 8px",
