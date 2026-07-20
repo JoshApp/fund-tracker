@@ -127,6 +127,8 @@
   .repbar button{font:600 13px system-ui;background:#14418a;color:#fff;border:none;border-radius:8px;padding:9px 15px;cursor:pointer}
   .repbar button.sec{background:#e5e7eb;color:#111}
   .repbar .hint{font:12px system-ui;color:#555}
+  .repbar .chip{font:600 12px system-ui;background:#fff;color:#14418a;border:1px solid #14418a;border-radius:20px;padding:5px 12px;cursor:pointer}
+  .repbar .chip.on{background:#14418a;color:#fff}
   @media print{ body{background:#fff} #report{color:#000} a{color:#14418a} .repbar,.noprint{display:none!important} }
   @media print{ body{background:#fff} #report{color:#000} a{color:#14418a} }
   html{scroll-behavior:smooth}
@@ -304,7 +306,7 @@ async function poll(){
       calls.push({m:"eth_call",p:[{to:USDC_ETH,data:balData(w.a)},"latest"]});
       calls.push({m:"eth_call",p:[{to:USDT_ETH,data:balData(w.a)},"latest"]});});
     const eRes=await rpc(ETH_RPC,calls);
-    eth.forEach((w,i)=>{w.native=hexToNum(eRes[i*3],18);w.nsym="ETH";w.stable=hexToNum(eRes[i*3+1],6)+hexToNum(eRes[i*3+2],6);w.err=0;});}
+    eth.forEach((w,i)=>{w.native=hexToNum(eRes[i*3],18);w.nsym="ETH";w.usdc=hexToNum(eRes[i*3+1],6);w.usdt=hexToNum(eRes[i*3+2],6);w.stable=(w.usdc||0)+(w.usdt||0);w.err=0;});}
   catch(e){eth.forEach(w=>w.err=1);}
   bar(70);
   W.forEach(w=>{const p=w.chain==="eth"?prices.eth:prices.cro;w.usd=(w.native||0)*(p||0)+(w.stable||0);});
@@ -628,14 +630,29 @@ function markReported(){
 }
 
 // ---- self-service PDF report for the police ----
-function generateReport(){
+const REPORT_SCOPES={
+  all:   {label:"Full report",   t:"Automated Fund-Tracking Report",     wf:w=>(w.usd||0)>1,        val:w=>w.usd||0,        acts:["a","b","c"], full:true},
+  freeze:{label:"Freezable only",t:"Freezable Funds (USDC & USDT)",       wf:w=>(w.stable||0)>1,     val:w=>w.stable||0,     acts:["circle","tether"],
+          intro:"This report lists only the funds that can be frozen <b>right now</b> — money currently held as the stablecoins USDC and USDT. These are issued by companies (Circle and Tether) that can freeze them at a specific address on a law-enforcement request."},
+  usdc:  {label:"USDC → Circle", t:"USDC Freeze Request — for Circle",    wf:w=>(w.usdc||0)>1,       val:w=>w.usdc||0, tok:"USDC", amt:w=>w.usdc||0, acts:["circle"],
+          intro:"This report lists only funds currently held as <b>USDC</b>, intended for a freeze request to <b>Circle</b> (the issuer of USDC)."},
+  usdt:  {label:"USDT → Tether", t:"USDT Freeze Request — for Tether",    wf:w=>(w.usdt||0)>1,       val:w=>w.usdt||0, tok:"USDT", amt:w=>w.usdt||0, acts:["tether"],
+          intro:"This report lists only funds currently held as <b>USDT</b>, intended for a freeze request to <b>Tether</b> (the issuer of USDT)."},
+  exch:  {label:"At an exchange", t:"Funds That Reached an Exchange",      wf:w=>(w.role==="exchange"||EXCH_RE.test(w.label||"")), val:w=>w.usd||0, exch:true, acts:["exchange"],
+          intro:"This report covers funds that reached a centralised exchange — the case where an account can be frozen and its owner identified by the exchange."},
+};
+const REPORT_ACTS={
+  exchange:`<b>Request to the exchange.</b> An exchange holds the funds and holds identity documents (KYC) for the account they were credited to. Please ask the exchange's compliance team to <b>identify the crediting account, freeze it, and preserve its KYC records</b>, quoting the transaction IDs and addresses in this report.`,
+  circle:`<b>Request to Circle (issuer of USDC).</b> Circle can <b>freeze / blacklist</b> USDC held at a specific address on a law-enforcement request. Please request a freeze on the USDC at the addresses listed above.`,
+  tether:`<b>Request to Tether (issuer of USDT).</b> Tether can <b>freeze / blacklist</b> USDT held at a specific address on a law-enforcement request. Please request a freeze on the USDT at the addresses listed above.`,
+  a:`<b>Funds at an exchange.</b> The exchange holds the funds and the account holder's identity. Ask its compliance team to identify the crediting account, freeze it, and preserve KYC records.`,
+  b:`<b>Funds held as stablecoins (USDC / USDT).</b> Issued by <b>Circle</b> (USDC) and <b>Tether</b> (USDT), which can freeze them at a specific address on a law-enforcement request.`,
+  c:`<b>Funds in private wallets (ordinary CRO / ETH).</b> No company can freeze these in place; they can be recovered only if moved to an exchange (then frozen there) or the wallet keys are seized. These addresses should be monitored — this tool does so automatically.`,
+};
+function generateReport(scope){
+  scope=scope||"all"; const cfg=REPORT_SCOPES[scope]||REPORT_SCOPES.all;
   const now=new Date().toISOString().slice(0,19).replace("T"," ");
   const tracked=W.filter(w=>w.id!=="c-gate");
-  const stableUsd=tracked.reduce((s,w)=>s+(w.stable||0),0);
-  const total=tracked.reduce((s,w)=>s+(w.usd||0),0);
-  const evs=mergedEvents().filter(e=>!e.test).slice(0,40);
-  const findings=allFindings().filter(x=>!isReported(x));   // new since the last report
-  const expl=w=>w.chain==="eth"?`https://etherscan.io/address/${w.a}`:`https://cronoscan.com/address/${w.a}`;
   const S={h1:"font:700 19px Georgia,serif;margin:0 0 4px",sub:"font:12px system-ui;color:#555;margin:0 0 16px",
     h2:"font:700 11px system-ui;letter-spacing:.09em;text-transform:uppercase;color:#8a1c1c;border-bottom:1.5px solid #8a1c1c;padding-bottom:4px;margin:20px 0 8px",
     p:"font:13px system-ui;margin:0 0 9px;line-height:1.5",
@@ -643,57 +660,67 @@ function generateReport(){
     th:"font:600 10px system-ui;text-transform:uppercase;color:#555;border:1px solid #ccc;padding:5px 7px;text-align:left;background:#f6f7f9",
     td:"font:11px system-ui;border:1px solid #ccc;padding:5px 7px;vertical-align:top",
     mono:"font-family:ui-monospace,Menlo,monospace;font-size:10px;word-break:break-all"};
-  const walletRows=tracked.filter(w=>(w.usd||0)>1).sort((a,b)=>(b.usd||0)-(a.usd||0)).map(w=>{
-    const a=actionFor(w);
-    return `<tr><td style="${S.td}"><span style="${S.mono}">${w.a}</span><br><span style="color:#666">${w.label} · ${w.chain==="eth"?"Ethereum":"Cronos"}</span></td>
-      <td style="${S.td};text-align:right;white-space:nowrap">${fmt(w.native,w.chain==="eth"?3:0)} ${w.chain==="eth"?"ETH":"CRO"}${w.stable?`<br>${fmt(w.stable,0)} USDC/USDT`:""}</td>
-      <td style="${S.td};text-align:right">${usd(w.usd||0)}</td>
-      <td style="${S.td}"><b>${a.tag}</b></td></tr>`;}).join("");
-  const evRows=evs.map(e=>{const a=actionForEvent(e);
-    return `<tr><td style="${S.td};white-space:nowrap">${e.t}</td>
-      <td style="${S.td}">${(e.msg||"").replace(/<[^>]+>/g,"")}<br><span style="${S.mono}">${e.url?e.url.split("/").pop():""}</span></td>
-      <td style="${S.td};text-align:right;white-space:nowrap">${e.amt||""}</td>
-      <td style="${S.td}"><b>${a.tag}</b></td></tr>`;}).join("");
+  const rows=tracked.filter(cfg.wf).sort((a,b)=>cfg.val(b)-cfg.val(a));
+  const scopeTotal=rows.reduce((s,w)=>s+cfg.val(w),0);
+  const holdings=w=>{ if(cfg.tok) return `${fmt(cfg.amt(w),0)} ${cfg.tok}`;
+    if(scope==="freeze") return [w.usdc?fmt(w.usdc,0)+" USDC":"",w.usdt?fmt(w.usdt,0)+" USDT":""].filter(Boolean).join(" · ");
+    return `${fmt(w.native,w.chain==="eth"?3:0)} ${w.chain==="eth"?"ETH":"CRO"}${w.stable?`<br>${fmt(w.stable,0)} USDC/USDT`:""}`; };
+  const walletRows=rows.map(w=>`<tr><td style="${S.td}"><span style="${S.mono}">${w.a}</span><br><span style="color:#666">${w.label} · ${w.chain==="eth"?"Ethereum":"Cronos"}</span></td>
+      <td style="${S.td};text-align:right;white-space:nowrap">${holdings(w)}</td>
+      <td style="${S.td};text-align:right">${usd(cfg.val(w))}</td>
+      <td style="${S.td}"><b>${actionFor(w).tag}</b></td></tr>`).join("");
+  // exchange scope: no current tracked balance (exchange wallets are omnibus) — list the movements that reached an exchange
+  const exFind=cfg.exch?allFindings().filter(f=>f.act && EXCH_RE.test(f.text||"")):[];
+  const findings=cfg.full?allFindings().filter(x=>!isReported(x)):[];
+  const moves=cfg.full?mergedEvents().filter(e=>!e.test).slice(0,40):[];
+  const actionsHtml=(cfg.acts||[]).map(k=>`<div style="${S.box}">${REPORT_ACTS[k]}</div>`).join("");
+
   document.getElementById("report").innerHTML=`
    <div style="max-width:820px;margin:0 auto;padding:20px 24px;background:#fff;color:#141821">
-    <h1 style="${S.h1}">Cryptocurrency Fraud — Automated Fund-Tracking Report</h1>
-    <p style="${S.sub}">Generated ${now} UTC · Blockchains: Cronos (chain ID 25) &amp; Ethereum · Live data from public blockchain nodes</p>
+    <h1 style="${S.h1}">Cryptocurrency Fraud — ${cfg.t}</h1>
+    <p style="${S.sub}">Generated ${now} UTC · Cronos (chain ID 25) &amp; Ethereum · Live data from public blockchain nodes${scope!=="all"?` · Scope: ${cfg.label}`:""}</p>
 
     <h2 style="${S.h2}">1. What this document is</h2>
-    <p style="${S.p}">This report is produced automatically by a monitoring tool that watches the wallets the stolen funds were traced to, on the public Cronos and Ethereum blockchains. Every figure comes from public blockchain records and <b>can be independently verified by anyone</b> using the explorer links included. It is provided to assist an investigation; it is not a legal determination.</p>
+    <p style="${S.p}">${cfg.intro?cfg.intro+" ":""}This report is produced automatically by a monitoring tool that watches the wallets the stolen funds were traced to, on the public Cronos and Ethereum blockchains. Every figure comes from public blockchain records and <b>can be independently verified by anyone</b> using the explorer links. It assists an investigation; it is not a legal determination.</p>
     <div style="${S.box}"><b>Reporting party:</b> ______________________________  &nbsp;&nbsp; <b>Contact:</b> ______________________________<br>
     <b>Police case / reference number:</b> ______________________________</div>
 
-    <h2 style="${S.h2}">2. Current position — where the money is now</h2>
-    <p style="${S.p}"><b>Total currently held in tracked wallets: ${usd(total)}</b>, of which <b>${usd(stableUsd)}</b> is held as the stablecoins USDC/USDT and <b>${usd(total-stableUsd)}</b> as ordinary coins (CRO/ETH). Tracked wallets: ${tracked.length}.</p>
-    <table style="border-collapse:collapse;width:100%"><tr><th style="${S.th}">Wallet address</th><th style="${S.th}">Holdings</th><th style="${S.th}">Value</th><th style="${S.th}">Status</th></tr>${walletRows}</table>
+    <h2 style="${S.h2}">2. ${scope==="all"?"Where the money is now":(cfg.exch?"Funds that reached an exchange":"Funds in scope — where they are now")}</h2>
+    ${cfg.exch ? (exFind.length?`<p style="${S.p}">The following movements reached a centralised exchange:</p>
+        <table style="border-collapse:collapse;width:100%"><tr><th style="${S.th}">When (UTC)</th><th style="${S.th}">What happened</th></tr>
+        ${exFind.map(f=>`<tr><td style="${S.td};white-space:nowrap">${f.when}</td><td style="${S.td}">${f.text}${f.url?`<br><span style="${S.mono}">${f.url.split("/").pop()}</span>`:""}</td></tr>`).join("")}</table>`
+      : `<p style="${S.p}">No funds are currently at an exchange in the actively tracked set. (Earlier deposits into Gate.io are already documented in the existing case file.)</p>`)
+    : (rows.length?`<p style="${S.p}"><b>Total in scope: ${usd(scopeTotal)}</b> across ${rows.length} wallet${rows.length===1?"":"s"}.</p>
+        <table style="border-collapse:collapse;width:100%"><tr><th style="${S.th}">Wallet address</th><th style="${S.th}">Holdings</th><th style="${S.th}">Value</th><th style="${S.th}">Status</th></tr>${walletRows}</table>`
+      : `<p style="${S.p}">No funds currently match this category. Nothing to report for this scope right now.</p>`)}
 
     ${findings.length?`<h2 style="${S.h2}">2b. New since the previous report</h2>
-    <div style="${S.box}">The following was detected <b>after the last report was generated${lastReportedAt?` (`+new Date(lastReportedAt).toISOString().slice(0,16).replace("T"," ")+` UTC)`:""}</b> and is the reason this document was produced:<br><br>
-      ${findings.slice(0,10).map(f=>`&bull; <b>${f.when}</b> — ${f.text}${f.act?` <b>[ACTION POSSIBLE]</b><br><span style="color:#444">${f.what}</span>`:` <i>(tracked only — cannot be frozen)</i>`}`).join("<br><br>")}
-    </div>`:""}
-    <h2 style="${S.h2}">3. What has moved</h2>
-    <p style="${S.p}">Movements detected by the monitor, newest first. "ACT" means something can be done about it; "WATCH" means the funds are in a private wallet where no company can freeze them.</p>
-    <table style="border-collapse:collapse;width:100%"><tr><th style="${S.th}">When (UTC)</th><th style="${S.th}">What happened</th><th style="${S.th}">Amount</th><th style="${S.th}">Status</th></tr>${evRows||`<tr><td style="${S.td}" colspan="4">No movements recorded yet.</td></tr>`}</table>
+    <div style="${S.box}">Detected <b>after the last report${lastReportedAt?` (`+new Date(lastReportedAt).toISOString().slice(0,16).replace("T"," ")+` UTC)`:""}</b>:<br><br>
+      ${findings.slice(0,10).map(f=>`&bull; <b>${f.when}</b> — ${f.text}${f.act?` <b>[ACTION POSSIBLE]</b><br><span style="color:#444">${f.what}</span>`:` <i>(tracked only — cannot be frozen)</i>`}`).join("<br><br>")}</div>`:""}
 
-    <h2 style="${S.h2}">4. What can be done — requested actions</h2>
-    <div style="${S.box}"><b>a) Funds at an exchange (marked ACT NOW).</b> An exchange holds the funds and holds identity documents for the account. Please ask the exchange's compliance team to <b>identify the crediting account, freeze it, and preserve the KYC records</b>, quoting the transaction IDs in section 3.</div>
-    <div style="${S.box}"><b>b) Funds held as stablecoins USDC / USDT (marked ACT).</b> These are issued by companies — <b>Circle</b> (USDC) and <b>Tether</b> (USDT) — which can <b>freeze/blacklist</b> the tokens at a specific address on a law-enforcement request. Please request a freeze on the addresses marked ACT in section 2.</div>
-    <div style="${S.box}"><b>c) Funds in private wallets (marked WATCH).</b> These are ordinary coins in wallets controlled by the perpetrators; no company can freeze them in place. They can be recovered only if they are moved to an exchange (then frozen there) or the wallet keys are seized. <b>These addresses should be monitored</b> — this tool does so automatically and records every movement.</div>
-    <p style="${S.p}"><b>Cross-border note:</b> the exchanges and issuers involved operate internationally; coordination via Europol/Interpol may be required.</p>
+    ${cfg.full?`<h2 style="${S.h2}">3. What has moved</h2>
+    <p style="${S.p}">Movements detected by the monitor, newest first. "ACT" = something can be done; "WATCH" = in a private wallet, cannot be frozen.</p>
+    <table style="border-collapse:collapse;width:100%"><tr><th style="${S.th}">When (UTC)</th><th style="${S.th}">What happened</th><th style="${S.th}">Amount</th><th style="${S.th}">Status</th></tr>
+      ${moves.map(e=>`<tr><td style="${S.td};white-space:nowrap">${e.t}</td><td style="${S.td}">${(e.msg||"").replace(/<[^>]+>/g,"")}<br><span style="${S.mono}">${e.url?e.url.split("/").pop():""}</span></td><td style="${S.td};text-align:right;white-space:nowrap">${e.amt||""}</td><td style="${S.td}"><b>${actionForEvent(e).tag}</b></td></tr>`).join("")||`<tr><td style="${S.td}" colspan="4">No movements recorded yet.</td></tr>`}</table>`:""}
 
-    <h2 style="${S.h2}">5. How to verify this report</h2>
-    <p style="${S.p}">Every address and transaction can be checked on the public block explorers — no account or software needed:</p>
+    <h2 style="${S.h2}">${cfg.full?"4.":"3."} What can be done — requested actions</h2>
+    ${actionsHtml}
+    <p style="${S.p}"><b>Cross-border note:</b> the exchanges and issuers operate internationally; coordination via Europol/Interpol may be required.</p>
+
+    <h2 style="${S.h2}">${cfg.full?"5.":"4."} How to verify this report</h2>
+    <p style="${S.p}">Every address can be checked on the public block explorers — no account or software needed:</p>
     <p style="${S.p}">Cronos: <b>https://cronoscan.com/address/&lt;address&gt;</b> &nbsp;·&nbsp; Ethereum: <b>https://etherscan.io/address/&lt;address&gt;</b></p>
-    <p style="font:11px system-ui;color:#666;margin-top:18px;border-top:1px solid #ccc;padding-top:10px">
-      Balances and values are live snapshots at the moment of generation and will change as funds move. Prices are approximate market rates. Generated by an automated blockchain-monitoring tool; figures are derived from public chain data.</p>
+    <p style="font:11px system-ui;color:#666;margin-top:18px;border-top:1px solid #ccc;padding-top:10px">Balances and values are live snapshots at generation time and change as funds move. Prices are approximate. Generated by an automated blockchain-monitoring tool from public chain data.</p>
    </div>`;
-  // show the report as a real full-screen view (works on every phone, not just desktop print)
+
+  const chips=Object.keys(REPORT_SCOPES).map(k=>`<button class="chip${k===scope?' on':''}" onclick="generateReport('${k}')">${REPORT_SCOPES[k].label}</button>`).join("");
   document.getElementById("report").insertAdjacentHTML("afterbegin",
     `<div class="repbar noprint">
-       <button onclick="window.print()">📄 Save as PDF / Print</button>
+       <button onclick="window.print()">📄 Save as PDF</button>
        <button class="sec" onclick="closeReport()">✕ Close</button>
-       <span class="hint">iPhone: tap “Save as PDF”, then in the print screen tap the share icon → “Save to Files”. Or use Safari’s Share → Print.</span>
+       <span style="width:100%;height:0"></span>
+       <span class="hint" style="width:100%">Report scope: </span>${chips}
+       <span class="hint" style="width:100%;margin-top:4px">iPhone: tap “Save as PDF”, then in the print screen tap the share icon → “Save to Files”. Or use Safari’s Share → Print.</span>
      </div>`);
   document.body.classList.add("printing");
   window.scrollTo(0,0);
