@@ -1,5 +1,5 @@
 {
- "nextWid": 32,
+ "nextWid": 35,
  "wallets": [
   {
    "id": "seed",
@@ -393,6 +393,36 @@
    "auto": true,
    "from": "0xb2C9438e12BbDcFB28cC5878EB8ED52256BbFFc7",
    "addedTs": "2026-07-22T13:31:23.547Z"
+  },
+  {
+   "id": "w32",
+   "addr": "0x2c54751e016f9b538Dd8DC90937048974cbF220B",
+   "chain": "eth",
+   "label": "auto ← ETH holdings",
+   "role": "holds",
+   "auto": true,
+   "from": "0xa91114c82153eec701121b395c0e94a9132f09c5",
+   "addedTs": "2026-07-23T13:31:49.081Z"
+  },
+  {
+   "id": "w33",
+   "addr": "0x7531394F1488C774fd3D56E5485e66BE4a18807c",
+   "chain": "eth",
+   "label": "auto ← ETH holdings",
+   "role": "holds",
+   "auto": true,
+   "from": "0xa91114c82153eec701121b395c0e94a9132f09c5",
+   "addedTs": "2026-07-23T13:31:49.081Z"
+  },
+  {
+   "id": "w34",
+   "addr": "0xD2c721308Cb17FCDd5D939b22c79CF152A2c4694",
+   "chain": "eth",
+   "label": "auto ← ETH holdings",
+   "role": "holds",
+   "auto": true,
+   "from": "0xa91114c82153eec701121b395c0e94a9132f09c5",
+   "addedTs": "2026-07-23T13:31:49.081Z"
   }
  ]
 }
