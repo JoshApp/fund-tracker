@@ -1,5 +1,5 @@
 {
- "nextWid": 41,
+ "nextWid": 43,
  "wallets": [
   {
    "id": "seed",
@@ -483,6 +483,26 @@
    "auto": true,
    "from": "0x037715F351B431c4D5531aFBb74F03ce9F09033D",
    "addedTs": "2026-07-24T08:58:59.524Z"
+  },
+  {
+   "id": "w41",
+   "addr": "0x9874FAEcD4046B5e4f8a6dC606B3cd6a47d560bf",
+   "chain": "eth",
+   "label": "auto ← ETH consolidation",
+   "role": "holds",
+   "auto": true,
+   "from": "0xf0Ef10c3b6D28231dBE9E5D198f1BAC04CfFad59",
+   "addedTs": "2026-07-24T10:39:36.492Z"
+  },
+  {
+   "id": "w42",
+   "addr": "0xE7cb55Ee8E18d2692A6A0AEa555580FBe4e9564C",
+   "chain": "eth",
+   "label": "auto ← ETH consolidation",
+   "role": "holds",
+   "auto": true,
+   "from": "0xf0Ef10c3b6D28231dBE9E5D198f1BAC04CfFad59",
+   "addedTs": "2026-07-24T10:39:36.492Z"
   }
  ]
 }
