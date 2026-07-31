@@ -1,5 +1,5 @@
 {
- "nextWid": 93,
+ "nextWid": 96,
  "wallets": [
   {
    "id": "seed",
@@ -1003,6 +1003,36 @@
    "auto": true,
    "from": "0x964E3fcB3311EC55CeA50D3dFBFB9dDC509a513c",
    "addedTs": "2026-07-31T16:54:36.068Z"
+  },
+  {
+   "id": "w93",
+   "addr": "0x7e8E348f33c332Ee6527f0F43F3b569cB0279Aa5",
+   "chain": "eth",
+   "label": "auto ← auto ← auto ← ETH consolidation",
+   "role": "holds",
+   "auto": true,
+   "from": "0x18bDADc16Ff80611b8f91C1Bc0928A130E7eFebC",
+   "addedTs": "2026-07-31T18:11:49.625Z"
+  },
+  {
+   "id": "w94",
+   "addr": "0x107b07a643F499f268A7A683c8822b3C325a9B72",
+   "chain": "eth",
+   "label": "auto ← auto ← auto ← ETH consolidation",
+   "role": "holds",
+   "auto": true,
+   "from": "0x18bDADc16Ff80611b8f91C1Bc0928A130E7eFebC",
+   "addedTs": "2026-07-31T18:11:49.625Z"
+  },
+  {
+   "id": "w95",
+   "addr": "0xC08460d4737ee05dc0147d2850C069fAFe19F8eB",
+   "chain": "eth",
+   "label": "auto ← ETH holdings",
+   "role": "holds",
+   "auto": true,
+   "from": "0xa91114c82153eec701121b395c0e94a9132f09c5",
+   "addedTs": "2026-07-31T18:11:49.625Z"
   }
  ]
 }
