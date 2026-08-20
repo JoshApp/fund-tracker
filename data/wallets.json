@@ -1,5 +1,5 @@
 {
- "nextWid": 131,
+ "nextWid": 132,
  "wallets": [
   {
    "id": "seed",
@@ -1384,6 +1384,16 @@
    "auto": true,
    "from": "0xf0Ef10c3b6D28231dBE9E5D198f1BAC04CfFad59",
    "addedTs": "2026-08-20T09:43:03.086Z"
+  },
+  {
+   "id": "w131",
+   "addr": "0x50e6899a4F41845a29a29aE8ED137A61EAfe0428",
+   "chain": "eth",
+   "label": "auto ← auto ← auto ← ETH holdings",
+   "role": "holds",
+   "auto": true,
+   "from": "0xf97479690021146A0C6405cE38f15A83e9fe57a6",
+   "addedTs": "2026-08-20T21:06:57.686Z"
   }
  ]
 }
