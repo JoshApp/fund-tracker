@@ -1011,6 +1011,7 @@
    "chain": "eth",
    "label": "auto ← auto ← auto ← ETH consolidation",
    "role": "holds",
+   "service": true,
    "auto": true,
    "from": "0x18bDADc16Ff80611b8f91C1Bc0928A130E7eFebC",
    "addedTs": "2026-07-31T18:11:49.625Z"
