@@ -922,6 +922,7 @@
    "chain": "eth",
    "label": "auto ← auto ← ETH holdings",
    "role": "holds",
+   "service": true,
    "auto": true,
    "from": "0x7531394F1488C774fd3D56E5485e66BE4a18807c",
    "addedTs": "2026-07-31T10:21:55.015Z"
