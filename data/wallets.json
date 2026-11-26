@@ -82,7 +82,8 @@
    "label": "ETH consolidation",
    "role": "bridge",
    "x": 0.86,
-   "y": 0.9
+   "y": 0.9,
+   "service": true
   },
   {
    "id": "w1",
